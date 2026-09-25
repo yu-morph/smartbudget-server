@@ -19,7 +19,7 @@
 2. 기존 `test.yml`의 검증 job 뒤에 Azure 배포 job을 추가한다. 배포 job은 `push` 이벤트와 `refs/heads/main`에서만 실행되고 검증 job에 의존한다. 기존 GHCR 게시 워크플로는 별도 흐름으로 유지한다.
 3. GitHub Actions는 Microsoft Entra workload identity federation을 사용하는 OIDC로 Azure에 로그인한다. 장기 Azure client secret은 저장하지 않는다. 연합 자격 증명 조건은 이 저장소의 `main` 배포 워크플로로 제한한다.
 4. 배포 job은 Azure VM Run Command로 대상 VM에서 배포 스크립트를 실행한다. SSH를 GitHub 러너에 개방하지 않는다. 권한은 대상 VM 범위로 제한하며 Run Command 실행에 필요한 권한만 부여한다. Run Command 스크립트는 Linux VM에서 관리자 권한으로 실행될 수 있으므로 workflow 변경은 `main` 병합 권한과 보호 규칙으로 통제한다.
-5. VM은 저장소에서 이벤트의 정확한 커밋 SHA를 가져와 해당 소스에서 앱 이미지를 빌드한다. `.env`와 SQLite 데이터 디렉터리는 기존 VM 경로에 유지한다. Compose 앱 서비스만 `--pull never --no-deps`로 갱신하며 Watchtower를 시작하지 않는다.
+5. VM은 workflow 이벤트의 저장소 식별자와 정확한 커밋 SHA를 받아 해당 저장소 `main`에서 SHA가 reachable한지 확인하고 앱 이미지를 빌드한다. 현재 VM checkout의 `origin`은 upstream이 아닌 포크를 가리키므로 `origin/main`을 배포 원본으로 가정하지 않는다. `.env`와 SQLite 데이터 디렉터리는 기존 VM 경로에 유지한다. Compose 앱 서비스만 `--pull never --no-deps`로 갱신하며 Watchtower를 시작하지 않는다.
 6. 배포 명령이 성공한 뒤 외부 HTTPS에서 `/api/v1/version`을 확인하고 응답의 `version`이 `github.sha`와 같은지 검사한다. 불일치나 health 확인 실패는 Actions 실행을 실패로 표시한다.
 7. Azure 리소스 그룹, VM 이름, 배포 디렉터리와 Entra 식별자 등은 GitHub Actions 변수·비밀값으로 제공한다. 앱 비밀값은 workflow나 저장소에 추가하지 않는다.
 

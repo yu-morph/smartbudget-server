@@ -85,7 +85,7 @@ jobs:
             --name "$AZURE_VM_NAME" \
             --command-id RunShellScript \
             --scripts "$deploy_script" \
-            --parameters "$AZURE_VM_APP_DIR" "$GITHUB_SHA" \
+            --parameters "$AZURE_VM_APP_DIR" "$GITHUB_SHA" "$GITHUB_REPOSITORY" \
             --only-show-errors \
             --output json
 
