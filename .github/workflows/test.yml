@@ -30,3 +30,79 @@ jobs:
 
       - name: Run project verification
         run: uv run --frozen python scripts/harness.py verify
+
+  deploy:
+    name: Deploy main to Azure VM
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: azure-main-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_VM_NAME: ${{ vars.AZURE_VM_NAME }}
+      AZURE_VM_APP_DIR: ${{ vars.AZURE_VM_APP_DIR }}
+      AZURE_APP_BASE_URL: ${{ vars.AZURE_APP_BASE_URL }}
+
+    steps:
+      - name: Check out the deployed commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Check required repository settings
+        run: |
+          set -euo pipefail
+          for name in AZURE_RESOURCE_GROUP AZURE_VM_NAME AZURE_VM_APP_DIR AZURE_APP_BASE_URL; do
+            if [[ -z "${!name:-}" ]]; then
+              printf 'Missing repository variable: %s\n' "$name" >&2
+              exit 1
+            fi
+          done
+          if [[ $AZURE_APP_BASE_URL != https://* ]]; then
+            printf 'AZURE_APP_BASE_URL must use HTTPS.\n' >&2
+            exit 1
+          fi
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the exact commit to the VM
+        run: |
+          set -euo pipefail
+          deploy_script="$(cat scripts/deploy_azure_vm.sh)"
+          az vm run-command invoke \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_VM_NAME" \
+            --command-id RunShellScript \
+            --scripts "$deploy_script" \
+            --parameters "$AZURE_VM_APP_DIR" "$GITHUB_SHA" \
+            --only-show-errors \
+            --output json
+
+      - name: Verify the deployed version over HTTPS
+        run: |
+          set -euo pipefail
+          version_url="${AZURE_APP_BASE_URL%/}/api/v1/version"
+          for attempt in {1..18}; do
+            if response="$(curl --fail --silent --show-error --max-time 10 "$version_url")"; then
+              if jq -e --arg sha "$GITHUB_SHA" \
+                '.status == 200 and .data.version == $sha' \
+                <<<"$response" >/dev/null; then
+                printf 'Azure VM is serving commit %s.\n' "$GITHUB_SHA"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          printf 'Azure VM did not report expected commit %s.\n' "$GITHUB_SHA" >&2
+          exit 1
