@@ -61,3 +61,11 @@ def test_deployment_rejects_repository_value_outside_github_path():
 
     assert result.returncode != 0
     assert "GitHub repository" in result.stderr
+
+
+def test_deployment_waits_for_the_compose_service_health():
+    """스크립트는 서비스 health 확인이 끝난 뒤 배포 성공을 표시합니다."""
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "--wait --wait-timeout 120 smartbudget-server" in script
+    assert script.index("--wait --wait-timeout") < script.index("DEPLOYED_SHA=")

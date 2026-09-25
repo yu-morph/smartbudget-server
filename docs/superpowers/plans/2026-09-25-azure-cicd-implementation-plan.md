@@ -16,7 +16,8 @@
 - GitHub Actions는 Azure OIDC를 사용하고 장기 Azure client secret을 보관하지 않는다.
 - Azure 권한은 대상 VM에서 Run Command를 실행하는 범위로 제한한다.
 - VM에서 `github.repository`의 `main`에 포함되고 `github.sha`와 일치하는 커밋만 빌드한다.
-- Compose의 `smartbudget-server` 서비스만 `--pull never --no-deps`로 실행한다.
+- 배포 시작 시 원격 `main`의 현재 SHA와 이벤트 SHA가 다르면 Azure 인증·VM 실행을 건너뛴다.
+- Compose의 `smartbudget-server` 서비스만 `--pull never --no-deps`로 실행하고 health 확인을 최대 120초 기다린다.
 - 기존 `.env`와 SQLite 데이터 디렉터리를 유지하고 볼륨을 삭제하지 않는다.
 - Watchtower를 기동하지 않고 GHCR 비공개 이미지 설정을 바꾸지 않는다.
 - 배포 후 HTTPS `/api/v1/version`의 버전이 배포 SHA와 일치해야 성공으로 처리한다.
@@ -28,7 +29,7 @@
 - `main`이 아닌 branch push에서는 배포 job을 건너뛴다. feature branch push 실행 결과에서 배포 job이 skipped인지 확인한다.
 - OIDC 또는 Azure 설정이 빠진 경우 VM 명령 실행 전에 workflow가 실패한다. GitHub/Azure 설정 확인 단계에서 필수 변수 누락이 실행 차단되는지 확인한다.
 - 손상되거나 다른 형식의 SHA와 잘못된 VM checkout 경로를 원격 스크립트가 변경 전에 거부한다. Bash 입력 검증의 실패 경로를 로컬에서 확인한다.
-- Docker health가 실패하거나 공개 version API가 다른 SHA를 반환하면 배포 job이 실패하고 데이터 볼륨은 유지된다. 통합 실행 로그와 VM의 볼륨 상태로 확인한다.
+- Docker health가 실패하거나 Run Command가 `DEPLOYED_SHA`를 출력하지 않거나 공개 version API가 다른 SHA를 반환하면 배포 job이 실패하고 데이터 볼륨은 유지된다. 오래된 main push는 배포 전 현재 main SHA 확인 단계에서 건너뛴다.
 
 ---
 
@@ -58,7 +59,7 @@ The script must use `set -euo pipefail`; require exactly three arguments; requir
 ```sh
 sudo env BUILD_VERSION="$commit_sha" BUILD_TIMESTAMP="$build_timestamp" \
   docker compose --project-directory "$app_dir" \
-  up -d --build --pull never --no-deps smartbudget-server
+  up -d --build --pull never --no-deps --wait --wait-timeout 120 smartbudget-server
 ```
 
 Do not run `docker compose down`, remove `.env`, alter `data/`, or start Watchtower.
@@ -86,11 +87,11 @@ git commit -m "feat: Azure VM 커밋 배포 스크립트 추가"
 
 - [ ] **Step 1: Add deploy job conditions and least workflow permissions**
 
-Add a job with `needs: test`, condition `github.event_name == 'push' && github.ref == 'refs/heads/main'`, job-level permissions `contents: read` and `id-token: write`, timeout, and job-level concurrency group `azure-main-deploy` with `cancel-in-progress: false`. Keep the existing verification job triggers unchanged.
+Add a job with `needs: test`, condition `github.event_name == 'push' && github.ref == 'refs/heads/main'`, job-level permissions `contents: read` and `id-token: write`, timeout, and job-level concurrency group `azure-main-deploy` with `cancel-in-progress: false`. Before Azure login, compare `github.sha` to the current remote `main` SHA and skip superseded runs. Keep the existing verification job triggers unchanged.
 
 - [ ] **Step 2: Add OIDC login and invoke the VM deploy script**
 
-Use `azure/login@v3` with OIDC and only the three Azure identity secrets. Validate that the four repository variables are nonempty, check out the event SHA, load `scripts/deploy_azure_vm.sh`, then call `az vm run-command invoke` for `RunShellScript` on the configured resource group and VM with `--parameters "$AZURE_VM_APP_DIR" "$GITHUB_SHA" "$GITHUB_REPOSITORY"`. Keep the script output concise because Azure Run Command response output is limited.
+Use `azure/login@v3` with OIDC and only the three Azure identity secrets. Validate that the four repository variables are nonempty, check out the event SHA, and explicitly invoke the Bash script through RunShellScript's default shell. Parse the returned message for the exact `DEPLOYED_SHA` marker because a nonzero shell exit alone is not sufficient evidence of remote deployment failure. Keep the script output concise because Azure Run Command response output is limited.
 
 - [ ] **Step 3: Add the external deployment check**
 
@@ -177,17 +178,17 @@ git commit -m "docs: Azure CI/CD 운영 절차 반영"
 - Consumes: merged workflow, OIDC identity, VM role, repository variables, and a trusted commit on `main`.
 - Produces: a successful Actions run whose deployed SHA equals the `main` event SHA and whose SQLite data volume remains present.
 
-- [ ] **Step 1: Open the feature branch PR to develop**
+- [x] **Step 1: Open the feature branch PR to develop**
 
-Open the feature branch PR to `develop`. Confirm the existing CI passes and the Azure deploy job is skipped. Confirm no Azure token is requested in this run.
+Opened PR #13 to `develop`.
 
-- [ ] **Step 2: Verify CI passes and Azure deploy is skipped on the PR**
+- [x] **Step 2: Verify CI passes and Azure deploy is skipped on the PR**
 
-Follow the repository's branch review policy. Confirm Actions still skips deployment on the `develop` merge.
+GitHub Actions passed the CI job and skipped the Azure deploy job on both PR runs. No Azure login ran.
 
 - [ ] **Step 3: When the approved release reaches main, observe the gated workflow**
 
-When the approved release reaches `main`, confirm `test` passes before `deploy`. Confirm Azure OIDC login succeeds and the VM Run Command reports success.
+After this PR and an approved release reach `main`, confirm `test` passes before `deploy`. Confirm Azure OIDC login succeeds and the VM Run Command reports success.
 
 - [ ] **Step 4: Verify the live version and persisted data**
 

@@ -75,7 +75,7 @@ docker compose up -d
 
 ### Azure 개발 VM 자동 배포 및 복구
 
-GitHub Actions는 기존 CI가 성공한 `main` push만 Azure 개발 VM에 배포합니다. Pull request와 다른 브랜치 push는 배포하지 않습니다. VM은 공개 GHCR 이미지를 받지 않고 저장소 `main`의 이벤트 커밋으로 앱 이미지를 직접 빌드합니다. 배포는 앱 서비스만 갱신하므로 Watchtower를 시작하지 않습니다. 현재 VM은 CI/CD 변경이 `main`에 반영되기 전까지 기존 `develop` 배포를 유지합니다.
+GitHub Actions는 기존 CI가 성공한 현재 `main` push만 Azure 개발 VM에 배포합니다. Pull request와 다른 브랜치 push는 배포하지 않습니다. VM은 공개 GHCR 이미지를 받지 않고 저장소 `main`의 이벤트 커밋으로 앱 이미지를 직접 빌드합니다. Compose는 컨테이너 health가 healthy가 될 때까지 기다리고, 앱 서비스만 갱신하므로 Watchtower를 시작하지 않습니다. 이미 새 커밋이 올라온 오래된 workflow 실행은 배포를 건너뜁니다. 현재 VM은 CI/CD 변경이 `main`에 반영되기 전까지 기존 `develop` 배포를 유지합니다.
 
 배포 후 workflow는 `https://smartbudget-dev-kc-260925.koreacentral.cloudapp.azure.com/api/v1/version`을 호출해 응답의 `data.version`이 해당 커밋 SHA와 같은지 확인합니다. 루트 `/`는 라우트가 없어 404를 반환할 수 있으며 health 확인에 사용하지 않습니다.
 

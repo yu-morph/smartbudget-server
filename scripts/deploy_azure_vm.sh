@@ -49,6 +49,6 @@ fi
 build_timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 sudo env BUILD_VERSION="$commit_sha" BUILD_TIMESTAMP="$build_timestamp" \
     docker compose --project-directory "$app_dir" \
-    up -d --build --pull never --no-deps smartbudget-server
+    up -d --build --pull never --no-deps --wait --wait-timeout 120 smartbudget-server
 
 printf 'DEPLOYED_SHA=%s\n' "$commit_sha"

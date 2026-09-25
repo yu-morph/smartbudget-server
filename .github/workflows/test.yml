@@ -55,6 +55,22 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
+      - name: Skip superseded main commits
+        id: target
+        run: |
+          set -euo pipefail
+          current_main_sha="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1)"
+          if [[ -z $current_main_sha ]]; then
+            printf 'Could not read the current main SHA.\n' >&2
+            exit 1
+          fi
+          if [[ $current_main_sha != "$GITHUB_SHA" ]]; then
+            printf 'Skipping superseded commit %s; current main is %s.\n' "$GITHUB_SHA" "$current_main_sha"
+            echo 'is_current=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'is_current=true' >> "$GITHUB_OUTPUT"
+
       - name: Check required repository settings
         run: |
           set -euo pipefail
@@ -70,6 +86,7 @@ jobs:
           fi
 
       - name: Sign in to Azure with OIDC
+        if: steps.target.outputs.is_current == 'true'
         uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -77,19 +94,29 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy the exact commit to the VM
+        if: steps.target.outputs.is_current == 'true'
         run: |
           set -euo pipefail
-          deploy_script="$(cat scripts/deploy_azure_vm.sh)"
-          az vm run-command invoke \
+          encoded_script="$(base64 < scripts/deploy_azure_vm.sh | tr -d '\n')"
+          remote_script="printf '%s' '$encoded_script' | base64 --decode | bash -s -- \"\$@\""
+          result="$(az vm run-command invoke \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_VM_NAME" \
             --command-id RunShellScript \
-            --scripts "$deploy_script" \
+            --scripts "$remote_script" \
             --parameters "$AZURE_VM_APP_DIR" "$GITHUB_SHA" "$GITHUB_REPOSITORY" \
             --only-show-errors \
-            --output json
+            --output json)"
+          if ! jq -e --arg expected "DEPLOYED_SHA=$GITHUB_SHA" \
+            '[.value[].message] | join(" ") | contains($expected)' \
+            <<<"$result" >/dev/null; then
+            printf 'Azure Run Command did not confirm deployed SHA %s.\n' "$GITHUB_SHA" >&2
+            jq -r '[.value[].message] | join(" ")' <<<"$result" >&2
+            exit 1
+          fi
 
       - name: Verify the deployed version over HTTPS
+        if: steps.target.outputs.is_current == 'true'
         run: |
           set -euo pipefail
           version_url="${AZURE_APP_BASE_URL%/}/api/v1/version"
