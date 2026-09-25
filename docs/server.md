@@ -73,19 +73,9 @@ docker compose pull
 docker compose up -d
 ```
 
-### Azure 개발 VM 자동 배포 및 복구
+### Azure 개발 서버 배포
 
-GitHub Actions는 기존 CI가 성공한 현재 `main` push만 Azure 개발 VM에 배포합니다. Pull request와 다른 브랜치 push는 배포하지 않습니다. VM은 공개 GHCR 이미지를 받지 않고 저장소 `main`의 이벤트 커밋으로 앱 이미지를 직접 빌드합니다. Compose는 컨테이너 health가 healthy가 될 때까지 기다리고, 앱 서비스만 갱신하므로 Watchtower를 시작하지 않습니다. 이미 새 커밋이 올라온 오래된 workflow 실행은 배포를 건너뜁니다. 현재 VM은 CI/CD 변경이 `main`에 반영되기 전까지 기존 `develop` 배포를 유지합니다.
-
-배포 후 workflow는 `https://smartbudget-dev-kc-260925.koreacentral.cloudapp.azure.com/api/v1/version`을 호출해 응답의 `data.version`이 해당 커밋 SHA와 같은지 확인합니다. 루트 `/`는 라우트가 없어 404를 반환할 수 있으며 health 확인에 사용하지 않습니다.
-
-실패한 배포를 이전에 정상 실행된 `main` 커밋으로 수동 복구할 때는 VM의 저장소 루트에서 실행합니다.
-
-```sh
-bash scripts/deploy_azure_vm.sh /home/azureuser/smartbudget-server <정상-커밋-SHA> yu-morph/smartbudget-server
-```
-
-배포 스크립트는 `.env`와 SQLite 데이터 디렉터리를 삭제하지 않습니다. DB 스키마 변경이 포함됐다면 앱 커밋만 되돌리기 전에 백업·복구 가능성을 확인합니다. GitHub/Azure 설정과 자세한 운영 절차는 [Azure 개발 서버 배포 설계](azure-deployment-design.md)를 참고합니다.
+Azure VM의 실제 배포 상태, CI/CD의 활성 여부와 실행 흐름, 버전 확인 및 수동 복구 방법은 [Azure 개발 서버 배포 및 CI/CD 운영](azure-deployment-design.md)에 기록합니다. 이 문서는 로컬 서버 실행·설정과 앱 구조를 설명하고, 배포 운영 사실은 해당 문서를 기준으로 합니다.
 
 유지보수 및 기타 목적으로 인해 서버를 잠시 다운시켜야 할 경우에는 다음 명령을 사용합니다.
 
@@ -147,7 +137,7 @@ NullPool로 요청 후 DB 연결을 반환합니다. 쓰기는 BEGIN IMMEDIATE�
 
 공식 실행 진입점은 Uvicorn 단일 worker, 동시 처리 제한 16, 접근 로그 비활성화입니다. Argon2 해시·검증은 프로세스당 한 번에 하나만 실행하여 피크 메모리를 줄입니다. SQLite 쓰기 잠금 중 로그인 해시 검증도 수행하므로 인증 쓰기 처리량은 직렬 처리 속도에 제한됩니다. 높은 처리량이 필요해질 때 DB·잠금 전략을 재검토합니다. 만료된 로그인 제한 기록은 다음 로그인에서 정리하며 전역 기록 개수 제한은 없습니다.
 
-Uvicorn 자체의 동시 처리 제한 503은 인증 API의 JSON 봉투와 다를 수 있습니다. 별도의 HTTPS 프록시·배포·자동 백업 인프라는 포함하지 않습니다. 배포 시 HTTPS와 DB·.env 접근 권한을 설정하고, 서버를 완전히 중지한 상태에서 DB 파일을 복사해 백업합니다. 복원·업데이트 전에도 서버를 중지합니다.
+Uvicorn 자체의 동시 처리 제한으로 반환되는 503은 인증 API의 JSON 응답 형식과 다를 수 있습니다. 애플리케이션에는 HTTPS 프록시와 자동 백업 기능이 포함되어 있지 않습니다. Azure 배포와 HTTPS 구성은 [Azure 개발 서버 배포 및 CI/CD 운영](azure-deployment-design.md)을 참고하세요. DB 파일을 백업할 때는 서버를 완전히 중지한 뒤 복사하고, 복원·업데이트 전에도 서버를 중지합니다.
 
 ## 검증
 
