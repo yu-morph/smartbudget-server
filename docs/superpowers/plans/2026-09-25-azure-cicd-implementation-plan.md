@@ -117,23 +117,23 @@ git commit -m "ci: main 검증 통과 후 Azure 자동 배포"
 - Consumes: Azure subscription, tenant, VM resource group and name, VM's actual checkout path, and Entra permissions to create a federated credential and role assignment.
 - Produces: OIDC login restricted to `yu-morph/smartbudget-server` `main`, with a custom role containing only `Microsoft.Compute/virtualMachines/runCommand/action` assigned at the target VM resource scope; required GitHub secrets and variables.
 
-- [ ] **Step 1: Confirm the live Azure resource identifiers and checkout path**
+- [x] **Step 1: Confirm the live Azure resource identifiers and checkout path**
 
 Read the Azure subscription, tenant, VM resource group and VM name; use a read-only Azure VM Run Command inspection to confirm the existing clone directory, Git `origin` URL, Docker Compose availability, and public version endpoint. Do not run the deployment command in this inspection.
 
-- [ ] **Step 2: Create the branch-restricted federated credential**
+- [x] **Step 2: Create the branch-restricted federated credential**
 
 Create or reuse a Microsoft Entra application for GitHub Actions. Add a federated credential with issuer `https://token.actions.githubusercontent.com`, subject `repo:yu-morph/smartbudget-server:ref:refs/heads/main`, and audience `api://AzureADTokenExchange`. Do not create a client secret.
 
-- [ ] **Step 3: Assign the single-VM Run Command role**
+- [x] **Step 3: Assign the single-VM Run Command role**
 
 Create or reuse a custom role with the Run Command action `Microsoft.Compute/virtualMachines/runCommand/action`, then assign it at the exact VM resource scope. Do not grant subscription-wide Contributor or Virtual Machine Contributor access.
 
-- [ ] **Step 4: Store GitHub Actions settings**
+- [x] **Step 4: Store GitHub Actions settings**
 
 Set secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`; set variables `AZURE_RESOURCE_GROUP`, `AZURE_VM_NAME`, `AZURE_VM_APP_DIR`, and `AZURE_APP_BASE_URL`. Confirm no app secret, JWT key, database credential, or SSH private key is added to GitHub.
 
-- [ ] **Step 5: Commit setup instructions**
+- [x] **Step 5: Record setup instructions**
 
 Record only non-secret resource names, required secret/variable names, role scope, and configuration status in the Azure deployment document. Never record credential values.
 
@@ -149,15 +149,15 @@ Record only non-secret resource names, required secret/variable names, role scop
 - Consumes: deployed workflow behavior and configured Azure resources.
 - Produces: accurate distinction between automatic main deployment and manual source updates; links to required GitHub settings, readiness endpoint, and manual recovery procedure.
 
-- [ ] **Step 1: Replace outdated manual-only statements**
+- [x] **Step 1: Replace outdated manual-only statements**
 
 Update the deployment status and operating procedure: main pushes deploy automatically after CI success; feature branches and PRs do not deploy; GHCR publication remains private and separate; Watchtower is not started; users can still manually run the documented VM script for recovery.
 
-- [ ] **Step 2: Document the smoke check and recovery**
+- [x] **Step 2: Document the smoke check and recovery**
 
 State that the root URL may return 404, and the deployment check uses `/api/v1/version` and compares the SHA. Document how to inspect failed workflow/Run Command output, restore a previous source SHA without removing the SQLite volume, and confirm the restored version API response.
 
-- [ ] **Step 3: Mark the spec implemented and check documentation links**
+- [x] **Step 3: Record implementation state and check documentation links**
 
 Update the spec status only after all implementation and Azure setup steps succeed. Check all new docs links resolve and run `git diff --check`.
 
@@ -168,7 +168,7 @@ git add docs/azure-deployment-design.md docs/server.md docs/superpowers/specs/20
 git commit -m "docs: Azure CI/CD 운영 절차 반영"
 ```
 
-### Task 5: Run the first main deployment and verify it end to end
+### Task 5: Verify the upstream PR gate and first main deployment
 
 **Files:**
 - Verify: `.github/workflows/test.yml`, `scripts/deploy_azure_vm.sh`, live Azure VM and HTTPS API
@@ -177,15 +177,15 @@ git commit -m "docs: Azure CI/CD 운영 절차 반영"
 - Consumes: merged workflow, OIDC identity, VM role, repository variables, and a trusted commit on `main`.
 - Produces: a successful Actions run whose deployed SHA equals the `main` event SHA and whose SQLite data volume remains present.
 
-- [ ] **Step 1: Verify safe branch behavior before merge**
+- [ ] **Step 1: Open the feature branch PR to develop**
 
 Open the feature branch PR to `develop`. Confirm the existing CI passes and the Azure deploy job is skipped. Confirm no Azure token is requested in this run.
 
-- [ ] **Step 2: Merge the workflow and settings documentation to develop**
+- [ ] **Step 2: Verify CI passes and Azure deploy is skipped on the PR**
 
 Follow the repository's branch review policy. Confirm Actions still skips deployment on the `develop` merge.
 
-- [ ] **Step 3: Merge develop into main and observe the gated workflow**
+- [ ] **Step 3: When the approved release reaches main, observe the gated workflow**
 
 When the approved release reaches `main`, confirm `test` passes before `deploy`. Confirm Azure OIDC login succeeds and the VM Run Command reports success.
 

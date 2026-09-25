@@ -10,6 +10,7 @@
 | [server.md](server.md) | 서버 실행 및 설정 | 환경 변수·로컬 실행·SQLite 운영·소스 구조와 기능 추가 | 서버 실행·의존성·환경 설정·DB·운영 제약·소스 구조를 변경하거나 기능을 추가할 때 |
 | [azure-deployment-design.md](azure-deployment-design.md) | Azure 개발 서버 배포 설계 | 승인된 Azure VM 배포 범위·보안·업데이트·운영 결정을 기록 | Azure 배포 구현·검토 시 |
 | [azure-cicd-design.md](superpowers/specs/2026-09-25-azure-cicd-design.md) | Azure CI/CD 설계 | `main` 검증 통과 후 Azure 개발 VM에 배포하는 흐름과 보안 경계를 정의 | GitHub Actions CI 또는 Azure 자동 배포를 설계·변경·검토할 때 |
+| [azure-cicd-implementation-plan.md](superpowers/plans/2026-09-25-azure-cicd-implementation-plan.md) | Azure CI/CD 구현 계획 | 승인된 Azure CI/CD 설계를 구현하고 확인하는 단계별 계획 | Azure CI/CD를 구현하거나 진행 상태를 확인할 때 |
 | [harness-flow.svg](harness-flow.svg) | Codex 완료 전 검증 하네스 실행 흐름 | 하네스의 실행 단계를 그림으로 설명 | 하네스 실행 순서나 흐름도를 변경할 때 |
 | [openapi.json](openapi.json) | API 구현 목표 OpenAPI 3.1 명세 | 구현해야 할 인증·가계부·소비 분석·OCR API 계약의 단일 기준 | API를 구현·변경·검토하거나 클라이언트 계약을 확인할 때 |
 | [ocr.md](ocr.md) | 영수증 OCR API 설계 및 구현 결정사항 | OpenAPI의 OCR 계약을 보충하고 구현 시 측정·결정할 처리 방식 기록 | OCR 요청 제한·병렬 처리·비동기 전환·외부 OCR 연동을 구현하거나 검토할 때 |

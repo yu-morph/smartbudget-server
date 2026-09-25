@@ -1,6 +1,6 @@
 # Azure 개발 서버 CI/CD 설계
 
-상태: 사용자 검토 대기 (2026-09-25)
+상태: 구현 및 Azure 설정 완료 (2026-09-25). `main` 반영 후 첫 자동 배포 검증 대기.
 
 ## 목표
 
@@ -40,8 +40,9 @@
 ## GitHub와 Azure 사전 구성
 
 - GitHub Actions 배포 job에는 `id-token: write`와 `contents: read`만 부여한다.
-- Azure에는 이 저장소의 `main`에서 발급한 OIDC 토큰만 신뢰하는 연합 자격 증명과 대상 VM 범위의 Run Command 권한이 필요하다.
-- GitHub에는 Azure client ID, tenant ID, subscription ID와 리소스 그룹·VM·실제 checkout 경로를 각각 저장한다. Azure 식별자 자체는 비밀로 취급하지 않아도 되지만 workflow에서는 저장소 변수·비밀값으로 한곳에서 관리한다.
+- Entra 앱 `smartbudget-server-main-deploy`의 연합 자격 증명은 `repo:yu-morph/smartbudget-server:ref:refs/heads/main` 주체만 신뢰한다.
+- 사용자 지정 Azure 역할 `SmartBudget VM Run Command`에는 `Microsoft.Compute/virtualMachines/runCommand/action`만 있으며 대상 VM 리소스 범위에 할당했다.
+- GitHub 저장소에는 비밀값 `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`와 변수 `AZURE_RESOURCE_GROUP`, `AZURE_VM_NAME`, `AZURE_VM_APP_DIR`, `AZURE_APP_BASE_URL`을 등록했다. 앱 비밀값이나 SSH 키는 등록하지 않았다.
 - 첫 자동 배포 전에 workflow_dispatch 또는 별도의 사전 점검으로 Azure 로그인, VM 경로, VM Git 원격 접근, Compose 빌드와 외부 version 응답을 확인한다. 사전 점검은 앱 컨테이너를 교체하지 않는 읽기 전용 명령만 사용한다.
 
 ## 검증 기준

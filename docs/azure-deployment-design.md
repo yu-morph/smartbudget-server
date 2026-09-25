@@ -1,6 +1,6 @@
 # Azure 개발 서버 배포 설계
 
-상태: 2026-09-25 배포 완료. GitHub Actions와 GHCR 설정은 수정하지 않았다.
+상태: Azure VM 배포 완료. `main` CI 성공 후 Azure 자동 배포를 구성했으며, 이 브랜치 변경이 `main`에 반영된 뒤 첫 배포를 확인해야 한다.
 
 ## 목표와 범위
 
@@ -19,8 +19,8 @@
 
 ## 구현 원칙
 
-1. VM은 `develop` 브랜치를 checkout하고 앱 서비스만 `docker compose up -d --build --pull never --no-deps smartbudget-server`로 빌드·실행한다. Compose의 `--build`는 checkout한 코드로 이미지를 만들고 `--pull never`는 GHCR의 `latest`를 받지 않게 한다.
-2. `develop` 업데이트도 VM에서 `git pull --ff-only origin develop` 후 같은 Compose 명령을 수동 실행한다. GitHub Actions와 자동 배포는 범위 밖이다.
+1. VM은 저장소의 `main`에 포함된 이벤트 커밋을 checkout하고 앱 서비스만 빌드·실행한다. Compose의 `--pull never`는 GHCR 이미지를 pull하지 않게 한다.
+2. `.github/workflows/test.yml`은 기존 검증 job이 성공한 `main` push에서만 Azure VM 배포를 실행한다. PR과 다른 브랜치 push는 검증만 한다. GitHub Actions는 OIDC로 로그인하고 VM의 Run Command만 호출한다.
 3. Compose 전체를 올리지 않아 Watchtower 서비스를 실행하지 않는다. Watchtower 저장소는 2025-12-17에 읽기 전용 보관 상태가 되었으며, 이 수동 배포 경로에서는 자동 이미지 감지가 필요하지 않다.
 4. SQLite와 `.env`는 권한을 제한한다. 백업은 현재 설정하지 않았으며 실제 가계부 데이터를 받기 전에 별도 위치에 복구 가능한 백업이 필요하다.
 5. TLS 종료는 Azure가 제공한 DNS 이름을 대상으로 설정하고 외부 HTTPS 요청으로 인증서를 확인한다.
@@ -44,10 +44,31 @@
 - 루트 주소(`/`)에는 별도 페이지나 라우트가 없다. 따라서 브라우저에서 `/`에 접속하면 공통 HTTP 오류 처리기가 `{"status":404,"code":"INVALID_REQUEST","message":"The requested operation is not available.","data":null}`를 반환한다. 이는 서버 중단이 아니라 API 서버에 등록되지 않은 경로의 정상적인 404 응답이다. API 문서는 `/docs`, 구현 중인 API 목록은 `/openapi.json`, 배포 버전은 `/api/v1/version`에서 확인한다. 2026-09-25 외부 HTTPS 요청으로 루트 404와 이 세 경로의 HTTP 200을 확인했다.
 - SSH: `ssh -i ~/.ssh/smartbudget-dev-azure azureuser@smartbudget-dev-kc-260925.koreacentral.cloudapp.azure.com`
 
+## 자동 배포 설정
+
+- Entra 앱 `smartbudget-server-main-deploy`는 `yu-morph/smartbudget-server`의 `main` ref OIDC 토큰만 신뢰한다.
+- 사용자 지정 역할 `SmartBudget VM Run Command`에는 `Microsoft.Compute/virtualMachines/runCommand/action`만 있으며 대상 VM 리소스에만 할당했다.
+- GitHub Actions 비밀값: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
+- GitHub Actions 변수: `AZURE_RESOURCE_GROUP`, `AZURE_VM_NAME`, `AZURE_VM_APP_DIR`, `AZURE_APP_BASE_URL`.
+- 앱 비밀값은 GitHub에 등록하지 않았다. 기존 비공개 GHCR 게시 workflow는 별도로 유지한다.
+- 배포 성공 확인은 `/api/v1/version`의 `data.version`과 workflow 이벤트 SHA 비교로 한다. `/`는 점검 주소로 사용하지 않는다.
+- 현재 VM은 아직 `develop` 커밋을 실행하고 있다. CI/CD 변경이 `main`에 도달한 후 첫 자동 배포 및 실행 SHA를 확인해야 한다.
+
+## 복구
+
+배포 workflow가 실패하면 해당 GitHub Actions 실행에서 Azure 로그인, Run Command, HTTPS 버전 확인 단계의 오류를 확인한다. VM에서 수동 복구할 때는 저장소 루트에서 이전에 정상 실행된 `main` 커밋 SHA를 지정한다.
+
+```sh
+bash scripts/deploy_azure_vm.sh /home/azureuser/smartbudget-server <정상-커밋-SHA> yu-morph/smartbudget-server
+curl --fail --silent --show-error https://smartbudget-dev-kc-260925.koreacentral.cloudapp.azure.com/api/v1/version
+```
+
+이 스크립트는 SQLite 데이터 볼륨이나 `.env`를 삭제하지 않는다. 데이터 스키마 변경이 포함된 배포는 이전 앱 코드만 되돌려도 복구되지 않을 수 있으므로 DB 백업·복구 가능성을 먼저 확인한다.
+
 ## 남은 운영 항목
 
 - B1ms는 최소 개발 후보이며 CPU 크레딧이 소진되면 성능 제한이 생길 수 있다.
 - 월별 예산·거래 CRUD·소비 리포트·OCR API 일부는 현재 구현 스텁이다.
 - 자동 백업은 설정하지 않았다. 실제 가계부 데이터를 넣기 전 별도 위치에 복구 가능한 백업을 구성해야 한다.
-- `develop`의 이후 변경은 VM에서 `git pull --ff-only origin develop` 후 수동 빌드 명령을 다시 실행해야 한다. GitHub Actions·Watchtower 자동 배포는 사용하지 않는다.
+- 현재 운영 코드는 `develop`에서 배포됐으며, 앞으로는 `main`에 반영되어 CI를 통과한 커밋이 자동 배포된다. 수동 복구 외에는 VM에서 브랜치를 직접 업데이트하지 않는다.
 - 실제 사용자 데이터 기준의 부하·보안 검증은 아직 수행되지 않았다.
