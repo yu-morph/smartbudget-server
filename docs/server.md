@@ -73,16 +73,9 @@ docker compose pull
 docker compose up -d
 ```
 
-### Azure 개발 VM에서 develop 소스 직접 실행
+### Azure 개발 서버 배포
 
-Azure 개발 VM은 GHCR 이미지를 pull하지 않고, checkout한 `develop` 소스로 앱 서비스를 빌드합니다. Compose의 앱 서비스만 실행해 Watchtower는 시작하지 않습니다.
-
-```sh
-git pull --ff-only origin develop
-sudo env BUILD_VERSION="$(git rev-parse HEAD)" BUILD_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)" docker compose up -d --build --pull never --no-deps smartbudget-server
-```
-
-코드가 바뀔 때 위 명령을 다시 실행합니다. `--pull never`는 같은 GHCR `latest` 태그를 pull하지 않게 하고, `--no-deps`와 서비스 이름 지정은 Watchtower를 실행하지 않게 합니다. 이 경로는 수동 배포이며 GitHub Actions나 5분 자동 업데이트를 사용하지 않습니다. 전체 `docker compose up -d`는 Watchtower도 시작하므로 이 서버 업데이트에 사용하지 않습니다.
+Azure VM의 실제 배포 상태, CI/CD의 활성 여부와 실행 흐름, 버전 확인 및 수동 복구 방법은 [Azure 개발 서버 배포 및 CI/CD 운영](azure-deployment-design.md)에 기록합니다. 이 문서는 로컬 서버 실행·설정과 앱 구조를 설명하고, 배포 운영 사실은 해당 문서를 기준으로 합니다.
 
 유지보수 및 기타 목적으로 인해 서버를 잠시 다운시켜야 할 경우에는 다음 명령을 사용합니다.
 
@@ -144,7 +137,7 @@ NullPool로 요청 후 DB 연결을 반환합니다. 쓰기는 BEGIN IMMEDIATE�
 
 공식 실행 진입점은 Uvicorn 단일 worker, 동시 처리 제한 16, 접근 로그 비활성화입니다. Argon2 해시·검증은 프로세스당 한 번에 하나만 실행하여 피크 메모리를 줄입니다. SQLite 쓰기 잠금 중 로그인 해시 검증도 수행하므로 인증 쓰기 처리량은 직렬 처리 속도에 제한됩니다. 높은 처리량이 필요해질 때 DB·잠금 전략을 재검토합니다. 만료된 로그인 제한 기록은 다음 로그인에서 정리하며 전역 기록 개수 제한은 없습니다.
 
-Uvicorn 자체의 동시 처리 제한 503은 인증 API의 JSON 봉투와 다를 수 있습니다. 별도의 HTTPS 프록시·배포·자동 백업 인프라는 포함하지 않습니다. 배포 시 HTTPS와 DB·.env 접근 권한을 설정하고, 서버를 완전히 중지한 상태에서 DB 파일을 복사해 백업합니다. 복원·업데이트 전에도 서버를 중지합니다.
+Uvicorn 자체의 동시 처리 제한으로 반환되는 503은 인증 API의 JSON 응답 형식과 다를 수 있습니다. 애플리케이션에는 HTTPS 프록시와 자동 백업 기능이 포함되어 있지 않습니다. Azure 배포와 HTTPS 구성은 [Azure 개발 서버 배포 및 CI/CD 운영](azure-deployment-design.md)을 참고하세요. DB 파일을 백업할 때는 서버를 완전히 중지한 뒤 복사하고, 복원·업데이트 전에도 서버를 중지합니다.
 
 ## 검증
 
