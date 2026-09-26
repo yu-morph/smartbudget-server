@@ -73,6 +73,10 @@ docker compose pull
 docker compose up -d
 ```
 
+### Azure 개발 서버 배포
+
+Azure VM의 실제 배포 상태, CI/CD의 활성 여부와 실행 흐름, 버전 확인 및 수동 복구 방법은 [Azure 개발 서버 배포 및 CI/CD 운영](azure-deployment-design.md)에 기록합니다. 이 문서는 로컬 서버 실행·설정과 앱 구조를 설명하고, 배포 운영 사실은 해당 문서를 기준으로 합니다.
+
 유지보수 및 기타 목적으로 인해 서버를 잠시 다운시켜야 할 경우에는 다음 명령을 사용합니다.
 
 ```sh
@@ -121,7 +125,7 @@ docker compose down
 | PORT | 8000 | 1–65535 정수 |
 | WEB_ORIGINS | [] | 정확한 HTTP/HTTPS origin의 JSON 배열 |
 
-웹 예: `WEB_ORIGINS=["http://localhost:3000","https://example.com"]`. 경로·쿼리·사용자 정보·와일드카드는 허용하지 않습니다. CORS는 GET·POST·PATCH·DELETE, Authorization·Content-Type을 허용하고 Retry-After를 노출합니다. 쿠키 인증을 사용하지 않습니다. CORS는 브라우저 정책이며 안드로이드 인증을 대체하지 않습니다.
+웹 예: `WEB_ORIGINS=["http://localhost:3000","https://example.com"]`. 경로·쿼리·사용자 정보·와일드카드는 허용하지 않습니다. CORS는 GET·POST·PUT·PATCH·DELETE, Authorization·Content-Type·Idempotency-Key를 허용하고 Retry-After를 노출합니다. 쿠키 인증을 사용하지 않습니다. CORS는 브라우저 정책이며 안드로이드 인증을 대체하지 않습니다.
 
 `.env`, DB·저널 파일은 Git에서 제외합니다. `.env.example`만 공유합니다. 키·비밀번호·토큰을 로그에 남기지 않습니다. 서명키를 바꾸면 기존 토큰은 검증에 실패합니다. 발급자·수신 대상 변경도 기존 토큰 검증에 영향을 줍니다.
 
@@ -133,7 +137,7 @@ NullPool로 요청 후 DB 연결을 반환합니다. 쓰기는 BEGIN IMMEDIATE�
 
 공식 실행 진입점은 Uvicorn 단일 worker, 동시 처리 제한 16, 접근 로그 비활성화입니다. Argon2 해시·검증은 프로세스당 한 번에 하나만 실행하여 피크 메모리를 줄입니다. SQLite 쓰기 잠금 중 로그인 해시 검증도 수행하므로 인증 쓰기 처리량은 직렬 처리 속도에 제한됩니다. 높은 처리량이 필요해질 때 DB·잠금 전략을 재검토합니다. 만료된 로그인 제한 기록은 다음 로그인에서 정리하며 전역 기록 개수 제한은 없습니다.
 
-Uvicorn 자체의 동시 처리 제한 503은 인증 API의 JSON 봉투와 다를 수 있습니다. 별도의 HTTPS 프록시·배포·자동 백업 인프라는 포함하지 않습니다. 배포 시 HTTPS와 DB·.env 접근 권한을 설정하고, 서버를 완전히 중지한 상태에서 DB 파일을 복사해 백업합니다. 복원·업데이트 전에도 서버를 중지합니다.
+Uvicorn 자체의 동시 처리 제한으로 반환되는 503은 인증 API의 JSON 응답 형식과 다를 수 있습니다. 애플리케이션에는 HTTPS 프록시와 자동 백업 기능이 포함되어 있지 않습니다. Azure 배포와 HTTPS 구성은 [Azure 개발 서버 배포 및 CI/CD 운영](azure-deployment-design.md)을 참고하세요. DB 파일을 백업할 때는 서버를 완전히 중지한 뒤 복사하고, 복원·업데이트 전에도 서버를 중지합니다.
 
 ## 검증
 
@@ -161,6 +165,22 @@ smartbudget_server/
 │   ├── service.py    # 가입·로그인·계정 변경
 │   ├── security.py   # 비밀번호 검증·해시·JWT
 │   └── models.py     # User·LoginAttempt 테이블
+├── monthly_budget/
+│   ├── router.py     # 월별 예산 조회·저장 API 스텁
+│   ├── schemas.py    # 월별 예산 요청·응답 모델
+│   └── models.py     # 사용자별 월 예산 테이블
+├── transaction/
+│   ├── router.py     # 거래 CRUD API 스텁
+│   ├── schemas.py    # 거래 요청·응답 모델
+│   └── models.py     # 거래 테이블
+├── report/
+│   ├── router.py     # 소비 분석 생성·조회·삭제 API 스텁
+│   ├── schemas.py    # 소비 분석 요청·응답 모델
+│   └── models.py     # 소비 분석 리포트 테이블
+├── proxy/
+│   ├── router.py     # 영수증 OCR 프록시 API 스텁
+│   ├── schemas.py    # 파일별 OCR 응답 모델
+│   └── models.py     # 영속 모델을 사용하지 않음을 명시
 └── version/
     ├── __init__.py
     ├── router.py     # 서버 버전 조회 API
@@ -170,4 +190,4 @@ smartbudget_server/
 
 라우트는 Request의 app.state에서 해당 앱의 설정·엔진·버전 정보를 읽습니다. 모듈 전역에 앱별 DB나 설정을 저장하지 않습니다. main.py는 공통 HTTP 처리, 버전·인증 라우터, 가장 바깥의 CORS 순으로 구성합니다. 인증 전송 검사에서 즉시 반환하는 오류에도 CORS가 적용됩니다.
 
-새 기능은 실제로 추가할 때 auth/와 같은 수준의 디렉토리로 묶고 main.py에서 라우터를 등록합니다. 기능별 models.py는 공통 database.Base를 상속합니다. 앱 시작 시 create_all을 실행하기 전에 해당 모델 모듈을 불러와 메타데이터에 등록해야 합니다. 현재는 인증 라우터 → service → models의 import로 등록합니다. build_engine은 연결만 구성하고 테이블 초기화는 앱 수명주기에서 수행합니다. 별도의 repository·추상 인터페이스 계층은 없습니다.
+새 기능은 auth/와 같은 수준의 디렉토리로 묶고 main.py에서 라우터를 등록합니다. 기능별 models.py는 공통 database.Base를 상속하며, 영속 데이터가 없는 OCR은 모델 모듈만 유지합니다. 앱 시작 시 create_all을 실행하기 전에 인증·월별 예산·거래·리포트 모델 모듈을 불러와 메타데이터에 등록합니다. 현재 월별 예산·거래·리포트·OCR 라우트 함수는 OpenAPI 계약에 맞춘 구현 대기 스텁이며 실제 API 로직은 포함하지 않습니다. build_engine은 연결만 구성하고 테이블 초기화는 앱 수명주기에서 수행합니다. 별도의 repository·추상 인터페이스 계층은 없습니다.

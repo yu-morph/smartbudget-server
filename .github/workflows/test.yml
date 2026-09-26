@@ -30,3 +30,106 @@ jobs:
 
       - name: Run project verification
         run: uv run --frozen python scripts/harness.py verify
+
+  deploy:
+    name: Deploy main to Azure VM
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: azure-main-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_VM_NAME: ${{ vars.AZURE_VM_NAME }}
+      AZURE_VM_APP_DIR: ${{ vars.AZURE_VM_APP_DIR }}
+      AZURE_APP_BASE_URL: ${{ vars.AZURE_APP_BASE_URL }}
+
+    steps:
+      - name: Check out the deployed commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Skip superseded main commits
+        id: target
+        run: |
+          set -euo pipefail
+          current_main_sha="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1)"
+          if [[ -z $current_main_sha ]]; then
+            printf 'Could not read the current main SHA.\n' >&2
+            exit 1
+          fi
+          if [[ $current_main_sha != "$GITHUB_SHA" ]]; then
+            printf 'Skipping superseded commit %s; current main is %s.\n' "$GITHUB_SHA" "$current_main_sha"
+            echo 'is_current=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'is_current=true' >> "$GITHUB_OUTPUT"
+
+      - name: Check required repository settings
+        run: |
+          set -euo pipefail
+          for name in AZURE_RESOURCE_GROUP AZURE_VM_NAME AZURE_VM_APP_DIR AZURE_APP_BASE_URL; do
+            if [[ -z "${!name:-}" ]]; then
+              printf 'Missing repository variable: %s\n' "$name" >&2
+              exit 1
+            fi
+          done
+          if [[ $AZURE_APP_BASE_URL != https://* ]]; then
+            printf 'AZURE_APP_BASE_URL must use HTTPS.\n' >&2
+            exit 1
+          fi
+
+      - name: Sign in to Azure with OIDC
+        if: steps.target.outputs.is_current == 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the exact commit to the VM
+        if: steps.target.outputs.is_current == 'true'
+        run: |
+          set -euo pipefail
+          encoded_script="$(base64 < scripts/deploy_azure_vm.sh | tr -d '\n')"
+          remote_script="printf '%s' '$encoded_script' | base64 --decode | bash -s -- \"\$@\""
+          result="$(az vm run-command invoke \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_VM_NAME" \
+            --command-id RunShellScript \
+            --scripts "$remote_script" \
+            --parameters "$AZURE_VM_APP_DIR" "$GITHUB_SHA" "$GITHUB_REPOSITORY" \
+            --only-show-errors \
+            --output json)"
+          if ! jq -e --arg expected "DEPLOYED_SHA=$GITHUB_SHA" \
+            '[.value[].message] | join(" ") | contains($expected)' \
+            <<<"$result" >/dev/null; then
+            printf 'Azure Run Command did not confirm deployed SHA %s.\n' "$GITHUB_SHA" >&2
+            jq -r '[.value[].message] | join(" ")' <<<"$result" >&2
+            exit 1
+          fi
+
+      - name: Verify the deployed version over HTTPS
+        if: steps.target.outputs.is_current == 'true'
+        run: |
+          set -euo pipefail
+          version_url="${AZURE_APP_BASE_URL%/}/api/v1/version"
+          for attempt in {1..18}; do
+            if response="$(curl --fail --silent --show-error --max-time 10 "$version_url")"; then
+              if jq -e --arg sha "$GITHUB_SHA" \
+                '.status == 200 and .data.version == $sha' \
+                <<<"$response" >/dev/null; then
+                printf 'Azure VM is serving commit %s.\n' "$GITHUB_SHA"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          printf 'Azure VM did not report expected commit %s.\n' "$GITHUB_SHA" >&2
+          exit 1
