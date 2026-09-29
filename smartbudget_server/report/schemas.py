@@ -31,7 +31,7 @@ class PeriodType(StrEnum):
 class ReportRequest(BaseModel):
     """생성할 리포트의 기간 종류와 시작 날짜를 검증합니다."""
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid")
     period_type: PeriodType
     period_start: DateString
 

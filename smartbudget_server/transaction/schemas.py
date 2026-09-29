@@ -65,7 +65,7 @@ BudgetCategory = ExpenseCategory | IncomeCategory
 class TransactionCreate(BaseModel):
     """새 거래의 필수 값과 선택 가능한 표시 정보를 검증합니다."""
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid")
     date: DateString
     type: TransactionType
     source: TransactionSource
@@ -92,9 +92,7 @@ class TransactionCreate(BaseModel):
 class TransactionUpdate(BaseModel):
     """거래 수정에서 제공 가능한 필드와 유형 변경 규칙을 검증합니다."""
 
-    model_config = ConfigDict(
-        extra="forbid", strict=True, json_schema_extra={"minProperties": 1}
-    )
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"minProperties": 1})
     date: DateString | None = None
     type: TransactionType | None = None
     category: BudgetCategory | None = None

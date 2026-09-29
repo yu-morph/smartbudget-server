@@ -1,12 +1,16 @@
-"""OpenAPI 월별 예산 엔드포인트의 구현 대기 라우트를 등록합니다."""
+"""월별 예산 조회와 저장 API를 구현합니다."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Security
+from fastapi import APIRouter, Path, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy import select
 
-from smartbudget_server.auth.router import bearer
-from smartbudget_server.http import documented_response
+from smartbudget_server.auth import service as auth_service
+from smartbudget_server.auth.router import bearer, bearer_token
+from smartbudget_server.database import read_session, write_session
+from smartbudget_server.http import documented_response, respond
+from smartbudget_server.monthly_budget.models import MonthlyBudget
 from smartbudget_server.monthly_budget.schemas import (
     AuthenticationRequiredEnvelope,
     InvalidRequestEnvelope,
@@ -30,6 +34,13 @@ RESPONSES = {
 }
 
 
+def _current_user(request: Request, credentials):
+    """Bearer 토큰으로 현재 사용자를 인증합니다."""
+    return auth_service.authenticate(
+        request.app.state.engine, request.app.state.settings, bearer_token(credentials)
+    )
+
+
 @router.get(
     "/{month}",
     response_model=SuccessEnvelope,
@@ -39,12 +50,21 @@ RESPONSES = {
 )
 def get_monthly_budget(
     month: Annotated[str, Path(pattern=r"^[0-9]{4}-(?:0[1-9]|1[0-2])$")],
+    request: Request,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Security(bearer)
     ] = None,
 ):
-    """인증 사용자의 대상 월 예산을 조회하는 구현 지점을 제공합니다."""
-    raise NotImplementedError
+    """인증 사용자의 대상 월 예산을 조회합니다."""
+    user = _current_user(request, credentials)
+    with read_session(request.app.state.engine) as session:
+        row = session.scalar(
+            select(MonthlyBudget).where(
+                MonthlyBudget.user_id == user.id, MonthlyBudget.month == month
+            )
+        )
+        amount = row.amount if row is not None else None
+    return respond(200, {"month": month, "amount": amount})
 
 
 @router.put(
@@ -57,9 +77,22 @@ def get_monthly_budget(
 def put_monthly_budget(
     month: Annotated[str, Path(pattern=r"^[0-9]{4}-(?:0[1-9]|1[0-2])$")],
     payload: MonthlyBudgetWrite,
+    request: Request,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Security(bearer)
     ] = None,
 ):
-    """인증 사용자의 대상 월 예산을 저장하는 구현 지점을 제공합니다."""
-    raise NotImplementedError
+    """인증 사용자의 대상 월 예산을 생성하거나 교체합니다."""
+    user = _current_user(request, credentials)
+    with write_session(request.app.state.engine) as session:
+        row = session.scalar(
+            select(MonthlyBudget).where(
+                MonthlyBudget.user_id == user.id, MonthlyBudget.month == month
+            )
+        )
+        if row is None:
+            row = MonthlyBudget(user_id=user.id, month=month, amount=payload.amount)
+            session.add(row)
+        else:
+            row.amount = payload.amount
+    return respond(200, {"month": month, "amount": payload.amount})
