@@ -1,20 +1,24 @@
-"""OpenAPI 거래 엔드포인트의 구현 대기 라우트를 등록합니다."""
+"""인증 사용자의 단건·일괄 거래 생성, 조회, 수정 및 삭제를 처리합니다."""
 
+import hashlib
+import time as clock
 from datetime import date, datetime, time, timezone
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Header, Path, Query, Request, Security
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select
+from sqlalchemy import delete, select, tuple_, update
 
 from smartbudget_server.auth import service as auth_service
 from smartbudget_server.auth.router import bearer, bearer_token
 from smartbudget_server.database import read_session, write_session
 from smartbudget_server.http import documented_response, respond
+from smartbudget_server.operations import IdempotencyRecord
 from smartbudget_server.report.models import Report
 from smartbudget_server.transaction.models import Transaction
 from smartbudget_server.transaction.schemas import (
+    DATE_PATTERN,
     AuthenticationRequiredEnvelope,
     CreatedEnvelope,
     IdempotencyConflictEnvelope,
@@ -22,6 +26,8 @@ from smartbudget_server.transaction.schemas import (
     ResourceNotFoundEnvelope,
     ServiceUnavailableEnvelope,
     SuccessEnvelope,
+    TransactionBatchCreate,
+    TransactionBatchDeleted,
     TransactionCreate,
     TransactionData,
     TransactionPage,
@@ -30,6 +36,17 @@ from smartbudget_server.transaction.schemas import (
 
 router = APIRouter(prefix="/api/v1/transaction", tags=["거래"])
 KST = ZoneInfo("Asia/Seoul")
+DateQuery = Annotated[str | None, Query(pattern=DATE_PATTERN)]
+CursorQuery = Annotated[str | None, Query(min_length=1, max_length=32)]
+IdempotencyKey = Annotated[
+    str | None,
+    Header(
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+    ),
+]
 
 
 def _current_user(request: Request, credentials):
@@ -84,6 +101,106 @@ NOT_FOUND_RESPONSE = documented_response(
 )
 
 
+def _date_range(start_date: str | None, end_date: str | None):
+    """조회와 일괄 변경에 동일한 양끝 포함 날짜 범위를 적용합니다."""
+    start = date.fromisoformat(start_date) if start_date else None
+    end = date.fromisoformat(end_date) if end_date else None
+    if start and end and start > end:
+        raise ValueError("Invalid date range")
+    return start, end
+
+
+def _transaction_filter(
+    user_id: int, start: date | None, end: date | None, cursor: str | None
+):
+    """사용자·날짜·커서 조건을 조회와 일괄 삭제에 공통으로 적용합니다."""
+    conditions = [Transaction.user_id == user_id]
+    if start is not None:
+        conditions.append(Transaction.date >= start)
+    if end is not None:
+        conditions.append(Transaction.date <= end)
+    if cursor is not None:
+        cursor_date, separator, cursor_id = cursor.rpartition(":")
+        parsed_id = int(cursor_id)
+        if not 1 <= parsed_id <= 2**63 - 1:
+            raise ValueError("Invalid cursor ID")
+        if separator:
+            conditions.append(
+                tuple_(Transaction.date, Transaction.id)
+                < (date.fromisoformat(cursor_date), parsed_id)
+            )
+        else:
+            conditions.append(Transaction.id < parsed_id)
+    return conditions
+
+
+def _ordered(statement):
+    """거래를 날짜와 ID의 내림차순으로 정렬합니다."""
+    return statement.order_by(Transaction.date.desc(), Transaction.id.desc())
+
+
+def _next_cursor(rows, limit: int) -> str | None:
+    """삭제 후에도 사용할 수 있는 날짜와 ID 커서를 생성합니다."""
+    if len(rows) <= limit:
+        return None
+    last = rows[limit - 1]
+    return f"{last.date.isoformat()}:{last.id}"
+
+
+def _new_transaction(
+    user_id: int, payload: TransactionCreate, now: datetime
+) -> Transaction:
+    """단건 생성과 일괄 생성에 동일한 저장 모델을 구성합니다."""
+    return Transaction(
+        user_id=user_id,
+        date=date.fromisoformat(payload.date),
+        time=time.fromisoformat(payload.time) if payload.time else None,
+        type=payload.type.value,
+        source=payload.source.value,
+        category=payload.category.value,
+        store_name=payload.store_name,
+        note=payload.note,
+        amount=payload.amount,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _mark_reports_stale(session, user_id: int, dates: set[date]) -> None:
+    """실제 거래 변경일을 포함하는 사용자 리포트를 갱신 대상으로 표시합니다."""
+    for target in dates:
+        session.execute(
+            update(Report)
+            .where(
+                Report.user_id == user_id,
+                Report.is_stale.is_(False),
+                Report.period_start <= target,
+                Report.period_end >= target,
+            )
+            .values(is_stale=True)
+        )
+
+
+async def _validate_batch_transport(request: Request) -> None:
+    """일괄 API의 날짜 쿼리와 메서드별 본문 계약을 확인합니다."""
+    allowed = {"start_date", "end_date"}
+    if request.method == "DELETE":
+        allowed.update(("limit", "cursor"))
+        if await request.body():
+            raise ValueError("DELETE does not accept a body")
+    elif (
+        request.headers.get("content-type", "").split(";")[0].strip().lower()
+        != "application/json"
+    ):
+        raise ValueError("Batch creation requires JSON")
+    supplied = request.query_params.multi_items()
+    if (
+        len(supplied) != len(request.query_params)
+        or set(request.query_params) - allowed
+    ):
+        raise ValueError("Invalid query parameters")
+
+
 @router.get(
     "",
     response_model=SuccessEnvelope[TransactionPage],
@@ -97,57 +214,37 @@ NOT_FOUND_RESPONSE = documented_response(
 )
 def list_transaction(
     request: Request,
-    start_date: Annotated[
-        str | None, Query(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
-    ] = None,
-    end_date: Annotated[
-        str | None, Query(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
-    ] = None,
+    start_date: DateQuery = None,
+    end_date: DateQuery = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    cursor: Annotated[str | None, Query(min_length=1)] = None,
+    cursor: CursorQuery = None,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Security(bearer)
     ] = None,
 ):
     """인증 사용자의 거래 목록을 조회합니다."""
     user = _current_user(request, credentials)
-    start = date.fromisoformat(start_date) if start_date else None
-    end = date.fromisoformat(end_date) if end_date else None
-    if start and end and start > end:
-        raise ValueError("Invalid date range")
-    try:
-        cursor_id = int(cursor) if cursor else None
-    except ValueError:
-        raise ValueError("Invalid cursor") from None
+    conditions = _transaction_filter(
+        user.id, *_date_range(start_date, end_date), cursor
+    )
     with read_session(request.app.state.engine) as session:
-        stmt = select(Transaction).where(Transaction.user_id == user.id)
-        if start:
-            stmt = stmt.where(Transaction.date >= start)
-        if end:
-            stmt = stmt.where(Transaction.date <= end)
-        if cursor_id:
-            stmt = stmt.where(Transaction.id < cursor_id)
         rows = list(
             session.scalars(
-                stmt.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(
-                    limit + 1
-                )
+                _ordered(select(Transaction).where(*conditions)).limit(limit + 1)
             )
         )
-        more = len(rows) > limit
-        rows = rows[:limit]
         return respond(
             200,
             {
-                "items": [_serialize(row) for row in rows],
-                "next_cursor": str(rows[-1].id) if more and rows else None,
+                "items": [_serialize(row) for row in rows[:limit]],
+                "next_cursor": _next_cursor(rows, limit),
             },
         )
 
 
 @router.post(
     "",
-    response_model=CreatedEnvelope,
+    response_model=CreatedEnvelope[TransactionData],
     status_code=201,
     responses={
         400: INVALID_REQUEST_RESPONSE,
@@ -163,15 +260,7 @@ def list_transaction(
 def create_transaction(
     payload: TransactionCreate,
     request: Request,
-    idempotency_key: Annotated[
-        str | None,
-        Header(
-            alias="Idempotency-Key",
-            min_length=1,
-            max_length=128,
-            pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
-        ),
-    ] = None,
+    idempotency_key: IdempotencyKey = None,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Security(bearer)
     ] = None,
@@ -180,31 +269,142 @@ def create_transaction(
     user = _current_user(request, credentials)
     now = datetime.now(timezone.utc)
     with write_session(request.app.state.engine) as session:
-        row = Transaction(
-            user_id=user.id,
-            date=date.fromisoformat(payload.date),
-            time=time.fromisoformat(payload.time) if payload.time else None,
-            type=payload.type.value,
-            source=payload.source.value,
-            category=payload.category.value,
-            store_name=payload.store_name,
-            note=payload.note,
-            amount=payload.amount,
-            created_at=now,
-            updated_at=now,
-        )
+        row = _new_transaction(user.id, payload, now)
         session.add(row)
         session.flush()
-        for report in session.scalars(
-            select(Report).where(
-                Report.user_id == user.id,
-                Report.period_start <= row.date,
-                Report.period_end >= row.date,
-            )
-        ):
-            report.is_stale = True
+        _mark_reports_stale(session, user.id, {row.date})
         result = _serialize(row)
     return respond(201, result)
+
+
+@router.post(
+    "/batch",
+    dependencies=[Depends(_validate_batch_transport)],
+    response_model=CreatedEnvelope[list[TransactionData]],
+    status_code=201,
+    responses={
+        400: INVALID_REQUEST_RESPONSE,
+        401: AUTHENTICATION_REQUIRED_RESPONSE,
+        409: documented_response(
+            IdempotencyConflictEnvelope, "중복 방지 키가 충돌했습니다."
+        ),
+        503: SERVICE_UNAVAILABLE_RESPONSE,
+    },
+    summary="기간 내 거래 일괄 생성",
+    operation_id="post_api_v1_transaction_batch",
+)
+def create_transaction_batch(
+    payload: TransactionBatchCreate,
+    request: Request,
+    start_date: DateQuery,
+    end_date: DateQuery,
+    idempotency_key: IdempotencyKey = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Security(bearer)
+    ] = None,
+):
+    """요청 기간 내 모든 거래를 한 쓰기 트랜잭션으로 생성합니다."""
+    token = bearer_token(credentials)
+    start, end = _date_range(start_date, end_date)
+    now = datetime.now(timezone.utc)
+    with write_session(request.app.state.engine) as session:
+        user = auth_service.authenticate_session(
+            session, request.app.state.settings, token
+        )
+        rows = [_new_transaction(user.id, item, now) for item in payload.items]
+        dates = {row.date for row in rows}
+        if min(dates) < start or max(dates) > end:
+            raise ValueError("Transaction date outside batch period")
+
+        record = None
+        if idempotency_key is not None:
+            fingerprint = hashlib.sha256(
+                f"{start}:{end}:{payload.model_dump_json()}".encode("utf-8")
+            ).hexdigest()
+            timestamp = clock.time()
+            record = session.get(
+                IdempotencyRecord, (user.id, "transaction_batch", idempotency_key)
+            )
+            if record and timestamp - record.created_at < 86400:
+                if record.fingerprint != fingerprint:
+                    return respond(
+                        409,
+                        code="IDEMPOTENCY_KEY_CONFLICT",
+                        message="The idempotency key has already been used for a different request.",
+                    )
+                return respond(201, record.response)
+            if record is None:
+                record = IdempotencyRecord(
+                    user_id=user.id,
+                    operation="transaction_batch",
+                    key=idempotency_key,
+                )
+                session.add(record)
+            record.fingerprint = fingerprint
+            record.created_at = record.completed_at = timestamp
+
+        session.add_all(rows)
+        session.flush()
+        _mark_reports_stale(session, user.id, dates)
+        result = [_serialize(row) for row in rows]
+        if record is not None:
+            record.response = result
+    return respond(201, result)
+
+
+@router.delete(
+    "/batch",
+    dependencies=[Depends(_validate_batch_transport)],
+    response_model=SuccessEnvelope[TransactionBatchDeleted],
+    responses={
+        400: INVALID_REQUEST_RESPONSE,
+        401: AUTHENTICATION_REQUIRED_RESPONSE,
+        503: SERVICE_UNAVAILABLE_RESPONSE,
+    },
+    summary="기간 내 거래 일괄 삭제",
+    operation_id="delete_api_v1_transaction_batch",
+)
+def delete_transaction_batch(
+    request: Request,
+    start_date: DateQuery,
+    end_date: DateQuery,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    cursor: CursorQuery = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Security(bearer)
+    ] = None,
+):
+    """선택 기간 또는 페이지의 본인 거래와 관련 리포트 상태를 함께 변경합니다."""
+    token = bearer_token(credentials)
+    start, end = _date_range(start_date, end_date)
+    with write_session(request.app.state.engine) as session:
+        user = auth_service.authenticate_session(
+            session, request.app.state.settings, token
+        )
+        conditions = _transaction_filter(user.id, start, end, cursor)
+        next_cursor = None
+        if limit is not None:
+            page = _ordered(select(Transaction.id, Transaction.date).where(*conditions))
+            rows = list(session.execute(page.limit(limit + 1)))
+            next_cursor = _next_cursor(rows, limit)
+            conditions.append(Transaction.id.in_([row.id for row in rows[:limit]]))
+        affected_report = (
+            select(Transaction.id)
+            .where(
+                *conditions,
+                Transaction.date.between(Report.period_start, Report.period_end),
+            )
+            .exists()
+        )
+        session.execute(
+            update(Report)
+            .where(
+                Report.user_id == user.id, Report.is_stale.is_(False), affected_report
+            )
+            .values(is_stale=True)
+        )
+        result = session.execute(delete(Transaction).where(*conditions))
+    return respond(200, {"deleted_count": result.rowcount, "next_cursor": next_cursor})
 
 
 @router.get(
@@ -276,15 +476,7 @@ def update_transaction(
         for key, value in changes.items():
             setattr(row, key, value.value if hasattr(value, "value") else value)
         row.updated_at = datetime.now(timezone.utc)
-        for target in {old_date, row.date}:
-            for report in session.scalars(
-                select(Report).where(
-                    Report.user_id == user.id,
-                    Report.period_start <= target,
-                    Report.period_end >= target,
-                )
-            ):
-                report.is_stale = True
+        _mark_reports_stale(session, user.id, {old_date, row.date})
         session.flush()
         result = _serialize(row)
     return respond(200, result)
@@ -319,13 +511,6 @@ def delete_transaction(
         )
         if not row:
             return _not_found()
-        for report in session.scalars(
-            select(Report).where(
-                Report.user_id == user.id,
-                Report.period_start <= row.date,
-                Report.period_end >= row.date,
-            )
-        ):
-            report.is_stale = True
+        _mark_reports_stale(session, user.id, {row.date})
         session.delete(row)
     return respond(200)

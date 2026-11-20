@@ -1,6 +1,6 @@
 """인증 기능의 계정·로그인 제한 테이블을 공통 메타데이터에 등록합니다."""
 
-from sqlalchemy import JSON, Boolean, Integer, String
+from sqlalchemy import JSON, Boolean, Integer, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smartbudget_server.database import Base
@@ -14,6 +14,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(12), unique=True)
     password_hash: Mapped[str] = mapped_column(String)
     display_name: Mapped[str] = mapped_column(String(10))
+    profile_image: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
     token_version: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[int] = mapped_column(Integer)

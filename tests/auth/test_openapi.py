@@ -237,7 +237,7 @@ def test_openapi_credentials_match_official_input_contract(client, endpoint):
 
 
 def test_openapi_account_update_fields_match_target_contract(client):
-    """PATCH 계정 수정 필드가 null 없이 목표 제약을 생성 OpenAPI에 공개합니다."""
+    """PATCH 계정 수정 필드와 이미지 제거 규칙을 생성 OpenAPI에 공개합니다."""
     schema = client.get("/openapi.json").json()
     request_schema = schema["paths"][PREFIX + "/account"]["patch"]["requestBody"][
         "content"
@@ -248,6 +248,12 @@ def test_openapi_account_update_fields_match_target_contract(client):
         name: {key: value for key, value in field.items() if key != "title"}
         for name, field in update["properties"].items()
     }
+    image = properties.pop("profile_image")
+    assert image["contentEncoding"] == "base64"
+    assert image["anyOf"] == [
+        {"type": "string", "minLength": 1, "maxLength": 6_990_508},
+        {"type": "null"},
+    ]
     assert properties == {
         "password": {
             "type": "string",

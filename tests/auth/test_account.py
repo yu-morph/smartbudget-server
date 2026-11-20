@@ -1,8 +1,13 @@
 """인증 계정의 생성·조회·수정·삭제와 사용자 격리를 검증합니다."""
 
+from base64 import b64decode, b64encode
+from io import BytesIO
+from sqlite3 import connect
+
 import jwt
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import select
 
 from smartbudget_server.auth.models import LoginAttempt, User
@@ -54,7 +59,9 @@ def test_delete_account_keeps_other_user(client):
     assert delete_account(client, first_token).status_code == 200
 
     assert account(client, second_token).json()["data"] == {
-        "display_name": "다른사용자"
+        "username": "user456",
+        "display_name": "다른사용자",
+        "profile_image": None,
     }
     with read_session(client.app.state.engine) as session:
         assert session.scalar(select(User).where(User.username == "user456"))
@@ -256,7 +263,11 @@ def test_account_lifecycle(client):
     assert set(sign_in_data) == {"token", "expires_at", "token_type"}
     first = sign_in_data["token"]
     other = signin(client).json()["data"]["token"]
-    assert account(client, first).json()["data"] == {"display_name": "홍 길동"}
+    assert account(client, first).json()["data"] == {
+        "username": "user123",
+        "display_name": "홍 길동",
+        "profile_image": None,
+    }
     renewed = client.post(PREFIX + "/refresh", json={"token": first})
     assert renewed.status_code == 200
     refresh_data = renewed.json()["data"]
@@ -274,7 +285,11 @@ def test_account_lifecycle(client):
     assert account(client, first).status_code == 200
     renamed = patch_account(client, first, {"display_name": "새 이름"})
     assert renamed.status_code == 200
-    assert renamed.json()["data"] == {"display_name": "새 이름"}
+    assert renamed.json()["data"] == {
+        "username": "user123",
+        "display_name": "새 이름",
+        "profile_image": None,
+    }
     assert account(client, first).status_code == 200
     changed = patch_account(
         client,
@@ -282,7 +297,11 @@ def test_account_lifecycle(client):
         {"current_password": "Abcdef12", "password": "Changed12!"},
     )
     assert changed.status_code == 200
-    assert changed.json()["data"] == {"display_name": "새 이름"}
+    assert changed.json()["data"] == {
+        "username": "user123",
+        "display_name": "새 이름",
+        "profile_image": None,
+    }
     for token in [first, other, new]:
         assert account(client, token).status_code == 401
         assert (
@@ -330,7 +349,11 @@ def test_wrong_current_password_keeps_all_account_values(client):
     )
     assert result.status_code == 401
     assert result.json()["code"] == "CURRENT_PASSWORD_INCORRECT"
-    assert account(client, token).json()["data"] == {"display_name": "홍길동"}
+    assert account(client, token).json()["data"] == {
+        "username": "user123",
+        "display_name": "홍길동",
+        "profile_image": None,
+    }
     assert signin(client).status_code == 200
     assert signin(client, password="Changed12!").status_code == 401
 
@@ -399,7 +422,11 @@ def test_restart_keeps_user_and_revocation(tmp_path):
     with TestClient(create_app(settings)) as second:
         assert account(second, token).status_code == 401
         new = signin(second, password="Changed12!").json()["data"]["token"]
-        assert account(second, new).json()["data"] == {"display_name": "홍길동"}
+        assert account(second, new).json()["data"] == {
+            "username": "user123",
+            "display_name": "홍길동",
+            "profile_image": None,
+        }
 
 
 def test_invalid_token_does_not_hash_new_password(client, monkeypatch):
@@ -454,3 +481,87 @@ def test_router_uses_each_apps_database_and_settings(tmp_path):
                 ).status_code
                 == 401
             )
+
+
+def test_profile_image_is_center_cropped_and_private(client):
+    """큰 이미지의 중앙 픽셀을 저장하며 조회와 수정에 현재 사용자만 적용합니다."""
+    assert signup(client).status_code == 200
+    token = signin(client).json()["data"]["token"]
+    assert signup(client, username="User456").status_code == 200
+    other = signin(client, username="user456").json()["data"]["token"]
+
+    image = Image.new("RGB", (700, 520), "red")
+    image.paste("blue", (100, 10, 600, 510))
+    buffer = BytesIO()
+    image.save(buffer, "PNG")
+    encoded = b64encode(buffer.getvalue()).decode("ascii")
+    response = patch_account(client, token, {"profile_image": encoded})
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["username"] == "user123"
+    assert account(client, token).json()["data"] == data
+    with Image.open(BytesIO(b64decode(data["profile_image"]))) as stored:
+        assert stored.format == "PNG"
+        assert stored.size == (500, 500)
+        assert stored.getpixel((0, 0)) == (0, 0, 255, 255)
+        assert stored.getpixel((499, 499)) == (0, 0, 255, 255)
+    assert account(client, other).json()["data"]["profile_image"] is None
+    assert (
+        patch_account(client, token, {"display_name": "새 이름"}).json()["data"][
+            "profile_image"
+        ]
+        == data["profile_image"]
+    )
+    assert (
+        patch_account(client, token, {"profile_image": None}).json()["data"][
+            "profile_image"
+        ]
+        is None
+    )
+
+
+def test_bad_profile_image_rejects_other_changes_and_signup(client):
+    """잘못된 Base64 또는 이미지 데이터가 다른 계정 변경을 남기지 않습니다."""
+    assert (
+        client.post(
+            PREFIX + "/sign-up",
+            json={
+                "username": "user123",
+                "password": "Password1!",
+                "display_name": "홍길동",
+                "profile_image": None,
+            },
+        ).status_code
+        == 400
+    )
+    assert signup(client).status_code == 200
+    token = signin(client).json()["data"]["token"]
+    for invalid in ("@@@", b64encode(b"not an image").decode("ascii"), ""):
+        response = patch_account(
+            client, token, {"profile_image": invalid, "display_name": "변경이름"}
+        )
+        assert response.status_code == 400
+    assert account(client, token).json()["data"] == {
+        "username": "user123",
+        "display_name": "홍길동",
+        "profile_image": None,
+    }
+
+
+def test_legacy_database_adds_profile_image_column_and_preserves_account(tmp_path):
+    """이미지 컬럼이 없는 SQLite 파일을 이전하고 재기동 시 기존 계정을 유지합니다."""
+    path = tmp_path / "old-profile.sqlite3"
+    settings = Settings(_env_file=None, jwt_secret="x" * 43, database_path=path)
+    with TestClient(create_app(settings)) as client:
+        assert signup(client).status_code == 200
+        token = signin(client).json()["data"]["token"]
+    with connect(path) as connection:
+        connection.execute("ALTER TABLE users DROP COLUMN profile_image")
+
+    for _ in range(2):
+        with TestClient(create_app(settings)) as client:
+            assert account(client, token).json()["data"] == {
+                "username": "user123",
+                "display_name": "홍길동",
+                "profile_image": None,
+            }

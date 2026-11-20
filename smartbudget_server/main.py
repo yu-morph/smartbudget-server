@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from smartbudget_server.auth.router import configure_auth
-from smartbudget_server.auth.service import initialize_user_id_counter
+from smartbudget_server.auth.service import initialize_accounts
 from smartbudget_server.config import Settings
 from smartbudget_server.database import Base, build_engine
 from smartbudget_server.http import configure_http
@@ -37,7 +37,7 @@ def create_app(
         app.state.ocr_prepare_semaphore = asyncio.Semaphore(1)
         try:
             Base.metadata.create_all(app.state.engine)
-            initialize_user_id_counter(app.state.engine)
+            initialize_accounts(app.state.engine)
             scheduler = None
             if (
                 settings.azure_openai_endpoint

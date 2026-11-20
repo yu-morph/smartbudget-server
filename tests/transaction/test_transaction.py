@@ -4,7 +4,9 @@ from datetime import date, datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from smartbudget_server.auth.models import User
 from smartbudget_server.config import Settings
 from smartbudget_server.database import read_session, write_session
 from smartbudget_server.main import create_app
@@ -235,3 +237,138 @@ def test_update_and_delete_mark_related_report_stale(client):
     )
     with read_session(client.app.state.engine) as session:
         assert session.get(Report, report_id).is_stale is True
+
+
+def test_batch_create_is_atomic_and_has_idempotent_replay(client):
+    """기간·날짜 오류는 일부 저장도 막고 같은 키의 성공 요청은 재생합니다."""
+    token = token_for(client)
+    batch = PREFIX + "/batch"
+    period = {"start_date": "2026-09-25", "end_date": "2026-09-27"}
+    valid = payload(date="2026-09-25")
+    for invalid in (payload(date="2026-09-28"), payload(date="2026-09-31")):
+        response = client.post(
+            batch,
+            params=period,
+            headers=headers(token),
+            json={"items": [valid, invalid]},
+        )
+        assert response.status_code == 400, response.text
+    assert client.get(PREFIX, headers=headers(token)).json()["data"]["items"] == []
+    request_headers = {**headers(token), "Idempotency-Key": "import-a"}
+    items = {"items": [valid, payload(date="2026-09-27")]}
+    first = client.post(batch, params=period, headers=request_headers, json=items)
+    again = client.post(batch, params=period, headers=request_headers, json=items)
+    assert first.status_code == again.status_code == 201, first.text
+    assert first.json() == again.json()
+    assert [row["date"] for row in first.json()["data"]] == ["2026-09-25", "2026-09-27"]
+    response = client.post(
+        batch, params=period, headers=request_headers, json={"items": [valid]}
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "IDEMPOTENCY_KEY_CONFLICT"
+    assert len(client.get(PREFIX, headers=headers(token)).json()["data"]["items"]) == 2
+
+
+def test_batch_delete_uses_search_order_and_respects_user_and_date(client):
+    """날짜 역순이 ID 순서와 다를 때도 삭제 페이지의 경계가 맞습니다."""
+    token = token_for(client)
+    other = token_for(client, username="User456")
+    latest = create(client, token, date="2026-09-27").json()["data"]["id"]
+    older = create(client, token, date="2026-09-25").json()["data"]["id"]
+    outside = create(client, token, date="2026-09-24").json()["data"]["id"]
+    assert create(client, other, date="2026-09-27").status_code == 201
+
+    period = {"start_date": "2026-09-25", "end_date": "2026-09-27"}
+    page = {"limit": 1, **period}
+    listed = client.get(PREFIX, headers=headers(token), params=page).json()["data"]
+    assert listed["items"][0]["id"] == latest
+    first = client.delete(PREFIX + "/batch", headers=headers(token), params=page)
+    assert first.status_code == 200, first.text
+    assert first.json()["data"] == {
+        "deleted_count": 1,
+        "next_cursor": listed["next_cursor"],
+    }
+    assert client.get(f"{PREFIX}/{latest}", headers=headers(token)).status_code == 404
+    second = client.delete(
+        PREFIX + "/batch",
+        headers=headers(token),
+        params={**page, "cursor": listed["next_cursor"]},
+    )
+    assert second.json()["data"] == {"deleted_count": 1, "next_cursor": None}
+    assert client.get(f"{PREFIX}/{older}", headers=headers(token)).status_code == 404
+    assert client.get(f"{PREFIX}/{outside}", headers=headers(token)).status_code == 200
+    assert len(client.get(PREFIX, headers=headers(other)).json()["data"]["items"]) == 1
+    repeated = client.delete(PREFIX + "/batch", headers=headers(token), params=period)
+    assert repeated.json()["data"] == {"deleted_count": 0, "next_cursor": None}
+
+
+def test_batch_requires_auth_and_both_dates(client):
+    """기간 없는 일괄 삭제와 인증 없는 쓰기를 거부합니다."""
+    token = token_for(client)
+    batch = PREFIX + "/batch"
+    period = {"start_date": "2026-09-25", "end_date": "2026-09-27"}
+    assert client.delete(batch, headers=headers(token)).status_code == 400
+    assert client.delete(batch, params=period).status_code == 401
+    assert (
+        client.post(batch, params=period, json={"items": [payload()]}).status_code
+        == 401
+    )
+    assert (
+        client.request(
+            "DELETE", batch, params=period, headers=headers(token), json={}
+        ).status_code
+        == 400
+    )
+    assert (
+        client.delete(
+            batch, params={**period, "unexpected": "false"}, headers=headers(token)
+        ).status_code
+        == 400
+    )
+
+
+def test_batch_writes_only_mark_reports_for_changed_dates(client):
+    """일괄 생성·전체 삭제가 실제 거래 날짜를 포함하는 리포트만 갱신 대상으로 표시합니다."""
+    token = token_for(client)
+    with write_session(client.app.state.engine) as session:
+        user_id = session.scalar(select(User.id).where(User.username == "user123"))
+        reports = [
+            Report(
+                user_id=user_id,
+                period_type="daily",
+                period_start=date(2026, 9, day),
+                period_end=date(2026, 9, day),
+                full_report="test",
+                requested_at=datetime.now(timezone.utc),
+                generated_at=datetime.now(timezone.utc),
+                processing_time_ms=1,
+                is_stale=False,
+            )
+            for day in (25, 26, 27)
+        ]
+        session.add_all(reports)
+        session.flush()
+        matching, *unaffected = [report.id for report in reports]
+
+    period = {"start_date": "2026-09-25", "end_date": "2026-09-27"}
+    batch = PREFIX + "/batch"
+    response = client.post(
+        batch,
+        params=period,
+        headers=headers(token),
+        json={"items": [payload(date="2026-09-25")]},
+    )
+    assert response.status_code == 201, response.text
+    with write_session(client.app.state.engine) as session:
+        assert session.get(Report, matching).is_stale is True
+        assert not any(
+            session.get(Report, report_id).is_stale for report_id in unaffected
+        )
+        session.get(Report, matching).is_stale = False
+    response = client.delete(batch, params=period, headers=headers(token))
+    assert response.json()["data"] == {"deleted_count": 1, "next_cursor": None}
+    with read_session(client.app.state.engine) as session:
+        assert session.get(Report, matching).is_stale is True
+        assert not any(
+            session.get(Report, report_id).is_stale for report_id in unaffected
+        )

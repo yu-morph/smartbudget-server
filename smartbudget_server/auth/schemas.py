@@ -13,6 +13,7 @@ from pydantic import (
 )
 
 from smartbudget_server.auth import security, service
+from smartbudget_server.auth.profile_image import MAX_BASE64_LENGTH
 from smartbudget_server.http import (
     INVALID_REQUEST,
     SUCCESS_MESSAGE,
@@ -171,6 +172,16 @@ class AccountUpdate(BaseModel):
         ),
     ] = None
 
+    profile_image: Annotated[
+        str | None,
+        Field(
+            min_length=1,
+            max_length=MAX_BASE64_LENGTH,
+            description="Base64 프로필 이미지입니다. null을 보내면 기존 이미지를 삭제합니다.",
+            json_schema_extra={"contentEncoding": "base64"},
+        ),
+    ] = None
+
     @field_validator("password", "display_name", "current_password")
     @classmethod
     def reject_null(cls, value):
@@ -218,10 +229,23 @@ class TokenData(BaseModel):
 
 
 class AccountData(BaseModel):
-    """본인 계정 조회·수정 응답의 표시 이름을 문서화합니다."""
+    """본인 계정 조회·수정 응답의 아이디, 표시 이름과 이미지를 문서화합니다."""
 
     model_config = ConfigDict(extra="forbid")
+    username: Annotated[
+        str, Field(description="소문자로 정규화한 로그인 아이디입니다.")
+    ]
     display_name: Annotated[str, Field(description="저장된 표시 이름입니다.")]
+    profile_image: Annotated[
+        str | None,
+        Field(
+            description="Base64로 인코딩된 PNG 이미지입니다. 이미지가 없으면 null입니다.",
+            json_schema_extra={
+                "contentEncoding": "base64",
+                "contentMediaType": "image/png",
+            },
+        ),
+    ]
 
 
 class SuccessEnvelope[T](Envelope[T]):

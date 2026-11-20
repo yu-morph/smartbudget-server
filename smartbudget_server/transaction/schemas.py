@@ -89,6 +89,21 @@ class TransactionCreate(BaseModel):
         return self
 
 
+class TransactionBatchCreate(BaseModel):
+    """한 요청에서 원자적으로 저장할 거래 1~500건을 검증합니다."""
+
+    model_config = ConfigDict(extra="forbid")
+    items: Annotated[list[TransactionCreate], Field(min_length=1, max_length=500)]
+
+
+class TransactionBatchDeleted(BaseModel):
+    """일괄 삭제 건수와 다음 페이지를 지정하는 커서를 반환합니다."""
+
+    model_config = ConfigDict(extra="forbid")
+    deleted_count: Annotated[int, Field(ge=0)]
+    next_cursor: str | None
+
+
 class TransactionUpdate(BaseModel):
     """거래 수정에서 제공 가능한 필드와 유형 변경 규칙을 검증합니다."""
 
@@ -156,7 +171,7 @@ class SuccessEnvelope[T](Envelope[T]):
     message: Literal[SUCCESS_MESSAGE]
 
 
-class CreatedEnvelope(Envelope[TransactionData]):
+class CreatedEnvelope[T](Envelope[T]):
     """거래 생성의 201 성공 응답 봉투를 정의합니다."""
 
     status: Literal[201]

@@ -6,8 +6,8 @@
 | --- | --- | --- | --- |
 | [index.md](index.md) | 프로젝트 문서 안내 | 작업 범위에 필요한 문서를 찾는 기준 | 모든 프로젝트 작업 시작 전 |
 | [harness.md](harness.md) | Codex 완료 전 검증 하네스 | 시작 안내, 종료 검증, 실행·제약을 설명 | 훅·하네스·검증 절차·문서 안내를 변경하거나 확인할 때 |
-| [authentication.md](authentication.md) | 사용자 관리 및 인증 API | v1 인증 계약·입력 정책·JWT 수명·본인 계정 접근과 현재 구현 범위 | 인증·회원가입·계정 정보·사용자별 권한·API 계약을 구현, 변경하거나 검증할 때 |
-| [server.md](server.md) | 서버 실행 및 설정 | 환경 변수·로컬 실행·SQLite 운영·소스 구조와 기능 추가 | 서버 실행·의존성·환경 설정·DB·운영 제약·소스 구조를 변경하거나 기능을 추가할 때 |
+| [authentication.md](authentication.md) | 사용자 관리 및 인증 API | v1 인증 계약·입력 정책·JWT 수명·프로필 이미지 및 본인 계정 접근 | 인증·회원가입·계정 정보·사용자별 권한·API 계약을 구현, 변경하거나 검증할 때 |
+| [server.md](server.md) | 서버 실행 및 설정 | 환경 변수·로컬 실행·SQLite 운영·거래 일괄 처리·소스 구조 | 서버 실행·의존성·환경 설정·DB·운영 제약·소스 구조를 변경하거나 기능을 추가할 때 |
 | [azure-deployment-design.md](azure-deployment-design.md) | Azure 개발 서버 배포 및 CI/CD 운영 | 실제 서버 상태, GitHub Actions 자동 배포 활성 여부·동작·복구 절차를 기록 | Azure 배포 상태·CI/CD·복구를 구현, 검토, 운영할 때 |
 | [harness-flow.svg](harness-flow.svg) | Codex 완료 전 검증 하네스 실행 흐름 | 하네스의 실행 단계를 그림으로 설명 | 하네스 실행 순서나 흐름도를 변경할 때 |
 | [openapi.json](openapi.json) | API 구현 목표 OpenAPI 3.1 명세 | 구현해야 할 인증·가계부·소비 분석·OCR API 계약의 단일 기준 | API를 구현·변경·검토하거나 클라이언트 계약을 확인할 때 |

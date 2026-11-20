@@ -2,15 +2,17 @@
 
 import secrets
 import time
+from base64 import b64encode
 
 import jwt
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from smartbudget_server.auth import security
 from smartbudget_server.auth.models import LoginAttempt, User
+from smartbudget_server.auth.profile_image import prepare_profile_image
 from smartbudget_server.config import Settings
 from smartbudget_server.database import read_session, write_session
 from smartbudget_server.monthly_budget.models import MonthlyBudget
@@ -79,9 +81,15 @@ def _user_id_counter(session: Session) -> UserIdCounter:
     return counter
 
 
-def initialize_user_id_counter(engine: Engine) -> None:
-    """기존 계정이 삭제되기 전에 ID 최댓값을 저장합니다."""
+def initialize_accounts(engine: Engine) -> None:
+    """기존 계정 테이블을 이전하고 계정 ID 재사용 방지 카운터를 초기화합니다."""
     with write_session(engine) as session:
+        connection = session.connection()
+        columns = inspect(connection).get_columns(User.__tablename__)
+        if not any(column["name"] == "profile_image" for column in columns):
+            connection.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN profile_image BLOB"
+            )
         _user_id_counter(session)
 
 
@@ -180,9 +188,13 @@ def _user(session: Session, claims: dict) -> User:
 
 def authenticate(engine: Engine, settings: Settings, token: str) -> User:
     """JWT와 DB 상태로 인증된 사용자를 읽기 트랜잭션에서 반환합니다."""
-    claims = _claims(token, settings)
     with read_session(engine) as session:
-        return _user(session, claims)
+        return authenticate_session(session, settings, token)
+
+
+def authenticate_session(session: Session, settings: Settings, token: str) -> User:
+    """거래 등 상태 변경과 같은 트랜잭션에서 토큰과 계정 상태를 확인합니다."""
+    return _user(session, _claims(token, settings))
 
 
 def refresh(engine: Engine, settings: Settings, token: str) -> str:
@@ -192,15 +204,29 @@ def refresh(engine: Engine, settings: Settings, token: str) -> str:
         return security.issue_token(user.id, user.token_version, settings)
 
 
-def get_account(engine: Engine, settings: Settings, token: str) -> dict:
-    """인증된 본인의 표시 이름만 반환합니다."""
-    user = authenticate(engine, settings, token)
-    return {"display_name": user.display_name}
+def _account_data(user: User) -> dict[str, str | None]:
+    """계정 정보를 공개 JSON 필드와 Base64 이미지로 변환합니다."""
+    image = user.profile_image
+    return {
+        "username": user.username,
+        "display_name": user.display_name,
+        "profile_image": b64encode(image).decode("ascii")
+        if image is not None
+        else None,
+    }
+
+
+def get_account(
+    engine: Engine, settings: Settings, token: str
+) -> dict[str, str | None]:
+    """인증된 본인의 아이디, 표시 이름과 프로필 이미지를 반환합니다."""
+    with read_session(engine) as session:
+        return _account_data(authenticate_session(session, settings, token))
 
 
 def update_account(
     engine: Engine, settings: Settings, token: str, changes: dict
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     """현재 비밀번호 확인과 본인 정보 변경을 한 쓰기 트랜잭션에 처리합니다."""
     values = dict(changes)
     current_password = values.pop("current_password", None)
@@ -208,8 +234,11 @@ def update_account(
         values["display_name"] = security.validate_display_name(values["display_name"])
     if "password" in values:
         security.validate_password(values["password"])
+    if values.get("profile_image") is not None:
+        authenticate(engine, settings, token)
+        values["profile_image"] = prepare_profile_image(values["profile_image"])
     with write_session(engine) as session:
-        user = _user(session, _claims(token, settings))
+        user = authenticate_session(session, settings, token)
         if "password" in values:
             if not security.verify_password(current_password, user.password_hash):
                 raise AuthError(
@@ -219,7 +248,9 @@ def update_account(
             user.token_version += 1
         if "display_name" in values:
             user.display_name = values["display_name"]
-        result = {"display_name": user.display_name}
+        if "profile_image" in values:
+            user.profile_image = values["profile_image"]
+        result = _account_data(user)
     return result
 
 

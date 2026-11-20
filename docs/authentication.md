@@ -74,14 +74,14 @@ POST·PUT·PATCH는 `Content-Type: application/json`을 사용합니다. 알 수
 성공 200의 data:
 
 ```json
-{"display_name":"홍길동"}
+{"username":"user123","display_name":"홍길동","profile_image":null}
 ```
 
-요청이 잘못되면 오류 코드 400, 토큰이 누락되거나 검증에 실패하면 오류 코드 401, DB 오류가 발생하면 오류 코드 503을 반환합니다. JWT의 사용자만 조회하며 다른 사용자 ID를 받지 않습니다.
+요청이 잘못되면 오류 코드 400, 토큰이 누락되거나 검증에 실패하면 오류 코드 401, DB 오류가 발생하면 오류 코드 503을 반환합니다. username은 소문자로 정규화한 로그인 아이디입니다. profile_image는 Base64 PNG이며, 이미지가 없으면 null입니다. JWT의 사용자만 조회하며 다른 사용자 ID를 받지 않습니다.
 
 ### PATCH /api/v1/auth/account
 
-`Authorization: Bearer <JWT>` 헤더로 인증합니다. 변경 필드는 `password`, `display_name`이며 하나 이상 전달해야 합니다. password를 바꾸려면 current_password를 함께 전달해야 하며 current_password만 전달할 수 없습니다.
+`Authorization: Bearer <JWT>` 헤더로 인증합니다. 변경 필드는 `password`, `display_name`, `profile_image`이며 하나 이상 전달해야 합니다. password를 바꾸려면 current_password를 함께 전달해야 하며 current_password만 전달할 수 없습니다.
 
 ```json
 {"display_name":"새 이름"}
@@ -91,7 +91,9 @@ POST·PUT·PATCH는 `Content-Type: application/json`을 사용합니다. 알 수
 {"current_password":"Password1!","password":"NewPassword2!"}
 ```
 
-생략한 값은 유지합니다. 빈 객체, 정의되지 않은 필드, password·display_name·current_password의 null 또는 current_password와 password 중 하나만 전달하면 오류 코드 400을 반환합니다. 현재 비밀번호가 일치하지 않으면 `CURRENT_PASSWORD_INCORRECT` 오류 코드와 HTTP 401을 반환합니다. 하나라도 잘못되면 아무 값도 변경하지 않습니다. 성공하면 변경된 display_name을 data에 반환합니다. 토큰이 누락되거나 검증에 실패하면 오류 코드 401, DB 오류가 발생하면 오류 코드 503을 반환합니다.
+생략한 값은 유지합니다. 빈 객체, 정의되지 않은 필드, password·display_name·current_password의 null 또는 current_password와 password 중 하나만 전달하면 오류 코드 400을 반환합니다. 현재 비밀번호가 일치하지 않으면 `CURRENT_PASSWORD_INCORRECT` 오류 코드와 HTTP 401을 반환합니다. 하나라도 잘못되면 아무 값도 변경하지 않습니다. 성공하면 GET과 동일한 계정 정보(username, display_name, profile_image)를 data에 반환합니다. 토큰이 누락되거나 검증에 실패하면 오류 코드 401, DB 오류가 발생하면 오류 코드 503을 반환합니다.
+
+프로필 이미지는 접두사 없이 표준 Base64 문자열을 전송합니다. 서버는 JPEG, PNG, WebP, HEIC/HEIF의 단일 이미지를 허용합니다. 원본은 최대 5 MiB 및 1,600만 픽셀이며, 방향을 보정하고 중앙에서 가로와 세로를 각각 최대 500px로 자른 뒤 PNG로 저장합니다. 이미지가 없거나 `{"profile_image":null}`로 삭제한 경우에는 조회 응답에서 null을 반환합니다. 회원가입 입력에는 profile_image가 포함되지 않습니다.
 
 현재 비밀번호 검증, 새 비밀번호 해시 저장과 token_version 증가를 한 트랜잭션으로 처리합니다. 해당 사용자의 기존 JWT를 모두 폐기하므로 변경 후 다시 로그인해야 합니다. 다른 사용자의 토큰은 영향받지 않습니다.
 

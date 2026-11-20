@@ -954,7 +954,7 @@
         ],
         "summary": "사용자 정보 조회",
         "operationId": "get_api_v1_auth_account",
-        "description": "필수 헤더: `Authorization: Bearer <JWT>`. 본문·쿼리로 토큰을 전달하지 않습니다.\n\n성공 200의 data:\n\n```json\n{\"display_name\":\"홍길동\"}\n```\n\n요청이 잘못되면 오류 코드 400, 토큰이 누락되거나 검증에 실패하면 오류 코드 401, DB 오류가 발생하면 오류 코드 503을 반환합니다. JWT의 사용자만 조회하며 다른 사용자 ID를 받지 않습니다.\n\n공통 계약\n\nPOST·PUT·PATCH는 `Content-Type: application/json`을 사용합니다. 알 수 없는 필드, 잘못된 자료형 또는 허용되지 않은 쿼리 파라미터를 전달하거나 GET 요청에 본문을 포함하면 오류 코드 400을 반환합니다. 오류 응답에 입력값·비밀번호·토큰·DB 경로를 포함하지 않습니다. 응답에는 `Cache-Control: no-store`를 설정합니다.\n\n모든 API 응답은 HTTP 상태와 같은 `status`, 안정적인 영문 `code`, 영문 `message`, `data`를 포함합니다. 오류의 `data`는 null이며 클라이언트는 message가 아니라 code로 분기합니다.\n\n```json\n{\"status\":200,\"code\":\"SUCCESS\",\"message\":\"The request has been accepted and processed.\",\"data\":null}\n```\n\n| 상태 | code | message | 의미 |\n| --- | --- | --- | --- |\n| 200 | `SUCCESS` | The request has been accepted and processed. | 성공 |\n| 400 | `INVALID_REQUEST` | The request parameters or format are invalid. | 요청 형식·입력 정책 위반 |\n| 401 | `INVALID_CREDENTIALS` | The username or password is incorrect. | 로그인 실패; 아이디 존재 여부를 구분하지 않음 |\n| 401 | `AUTHENTICATION_REQUIRED` | Authentication is required or the token is invalid. | 토큰 누락·검증 실패·만료·폐기 |\n| 401 | `CURRENT_PASSWORD_INCORRECT` | The current password is incorrect. | 비밀번호 변경 시 현재 비밀번호 불일치 |\n| 409 | `USERNAME_CONFLICT` | The username is already in use. | 가입 아이디 중복 |\n| 429 | `SIGN_IN_RATE_LIMITED` | Too many sign-in attempts. Please try again later. | 로그인 일시 제한; Retry-After는 남은 초 |\n| 503 | `SERVICE_UNAVAILABLE` | The service is temporarily unavailable. | DB 잠금·일시 사용 불가 |\n\n401 응답에는 `WWW-Authenticate: Bearer`를 설정합니다. 위 503은 DB 오류 응답이며 Uvicorn의 동시 요청 제한 응답까지 이 JSON 형식을 보장하지는 않습니다.\n\n토큰 수명과 보안\n\nJWT는 HS256으로 서명하며 기본 유효기간은 발급부터 5일입니다. sub(내부 사용자 ID), ver(폐기 버전), jti(고유 ID), iat, exp, iss, aud를 검증합니다. 사용자가 존재하고 활성 상태이며 DB의 버전과 일치해야 합니다. 비밀번호는 Argon2id 해시로 저장합니다.\n\n갱신은 아직 유효한 JWT로 새 발급 시각·고유 ID·유효기간의 JWT를 생성합니다. 갱신 전 토큰도 원래 만료 시각까지 유효합니다. 별도 리프레시 토큰, 30일 누적 갱신 상한, 로그인 세션 테이블은 없습니다. 프론트엔드 권장 조건은 **발급 후 1일 이상 경과 AND 만료까지 6시간 이내**입니다. 서버는 이 권장 시점을 강제하지 않습니다. 만료 후에는 다시 로그인합니다.\n\n클라이언트는 JWT를 안전하게 보관하고 요청 위치 규칙을 따릅니다. 로그아웃 API는 없으며 클라이언트에서 토큰을 삭제해도 서버에서 그 토큰을 폐기하지 않습니다. 실제 배포에서는 HTTPS로 평문 비밀번호와 토큰을 보호해야 합니다.\n\n조회·수정·삭제는 인증된 본인 계정에만 적용합니다.",
+        "description": "필수 헤더: `Authorization: Bearer <JWT>`. 본문·쿼리로 토큰을 전달하지 않습니다.\n\n성공 200의 data:\n\n```json\n{\"username\":\"user123\",\"display_name\":\"홍길동\",\"profile_image\":null}\n```\n\n요청이 잘못되면 오류 코드 400, 토큰이 누락되거나 검증에 실패하면 오류 코드 401, DB 오류가 발생하면 오류 코드 503을 반환합니다. profile_image는 Base64 PNG이며 미설정이면 null입니다. JWT의 사용자만 조회하며 다른 사용자 ID를 받지 않습니다.\n\n공통 계약\n\nPOST·PUT·PATCH는 `Content-Type: application/json`을 사용합니다. 알 수 없는 필드, 잘못된 자료형 또는 허용되지 않은 쿼리 파라미터를 전달하거나 GET 요청에 본문을 포함하면 오류 코드 400을 반환합니다. 오류 응답에 입력값·비밀번호·토큰·DB 경로를 포함하지 않습니다. 응답에는 `Cache-Control: no-store`를 설정합니다.\n\n모든 API 응답은 HTTP 상태와 같은 `status`, 안정적인 영문 `code`, 영문 `message`, `data`를 포함합니다. 오류의 `data`는 null이며 클라이언트는 message가 아니라 code로 분기합니다.\n\n```json\n{\"status\":200,\"code\":\"SUCCESS\",\"message\":\"The request has been accepted and processed.\",\"data\":null}\n```\n\n| 상태 | code | message | 의미 |\n| --- | --- | --- | --- |\n| 200 | `SUCCESS` | The request has been accepted and processed. | 성공 |\n| 400 | `INVALID_REQUEST` | The request parameters or format are invalid. | 요청 형식·입력 정책 위반 |\n| 401 | `INVALID_CREDENTIALS` | The username or password is incorrect. | 로그인 실패; 아이디 존재 여부를 구분하지 않음 |\n| 401 | `AUTHENTICATION_REQUIRED` | Authentication is required or the token is invalid. | 토큰 누락·검증 실패·만료·폐기 |\n| 401 | `CURRENT_PASSWORD_INCORRECT` | The current password is incorrect. | 비밀번호 변경 시 현재 비밀번호 불일치 |\n| 409 | `USERNAME_CONFLICT` | The username is already in use. | 가입 아이디 중복 |\n| 429 | `SIGN_IN_RATE_LIMITED` | Too many sign-in attempts. Please try again later. | 로그인 일시 제한; Retry-After는 남은 초 |\n| 503 | `SERVICE_UNAVAILABLE` | The service is temporarily unavailable. | DB 잠금·일시 사용 불가 |\n\n401 응답에는 `WWW-Authenticate: Bearer`를 설정합니다. 위 503은 DB 오류 응답이며 Uvicorn의 동시 요청 제한 응답까지 이 JSON 형식을 보장하지는 않습니다.\n\n토큰 수명과 보안\n\nJWT는 HS256으로 서명하며 기본 유효기간은 발급부터 5일입니다. sub(내부 사용자 ID), ver(폐기 버전), jti(고유 ID), iat, exp, iss, aud를 검증합니다. 사용자가 존재하고 활성 상태이며 DB의 버전과 일치해야 합니다. 비밀번호는 Argon2id 해시로 저장합니다.\n\n갱신은 아직 유효한 JWT로 새 발급 시각·고유 ID·유효기간의 JWT를 생성합니다. 갱신 전 토큰도 원래 만료 시각까지 유효합니다. 별도 리프레시 토큰, 30일 누적 갱신 상한, 로그인 세션 테이블은 없습니다. 프론트엔드 권장 조건은 **발급 후 1일 이상 경과 AND 만료까지 6시간 이내**입니다. 서버는 이 권장 시점을 강제하지 않습니다. 만료 후에는 다시 로그인합니다.\n\n클라이언트는 JWT를 안전하게 보관하고 요청 위치 규칙을 따릅니다. 로그아웃 API는 없으며 클라이언트에서 토큰을 삭제해도 서버에서 그 토큰을 폐기하지 않습니다. 실제 배포에서는 HTTPS로 평문 비밀번호와 토큰을 보호해야 합니다.\n\n조회·수정·삭제는 인증된 본인 계정에만 적용합니다.",
         "responses": {
           "200": {
             "description": "정상 처리됨.",
@@ -987,17 +987,39 @@
                       "const": "The request has been accepted and processed."
                     },
                     "data": {
-                      "type": "object",
-                      "required": [
-                        "display_name"
-                      ],
+                      "additionalProperties": false,
                       "properties": {
+                        "username": {
+                          "description": "소문자로 정규화한 로그인 아이디입니다.",
+                          "title": "Username",
+                          "type": "string"
+                        },
                         "display_name": {
-                          "type": "string",
-                          "description": "저장된 표시 이름입니다."
+                          "description": "저장된 표시 이름입니다.",
+                          "title": "Display Name",
+                          "type": "string"
+                        },
+                        "profile_image": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "contentEncoding": "base64",
+                          "contentMediaType": "image/png",
+                          "description": "Base64로 인코딩된 PNG 이미지입니다. 이미지가 없으면 null입니다.",
+                          "title": "Profile Image"
                         }
                       },
-                      "additionalProperties": false
+                      "required": [
+                        "username",
+                        "display_name",
+                        "profile_image"
+                      ],
+                      "type": "object"
                     },
                     "code": {
                       "type": "string",
@@ -1011,7 +1033,9 @@
                   "status": 200,
                   "message": "The request has been accepted and processed.",
                   "data": {
-                    "display_name": "홍길동"
+                    "username": "user123",
+                    "display_name": "홍길동",
+                    "profile_image": null
                   },
                   "code": "SUCCESS"
                 }
@@ -1188,7 +1212,7 @@
         ],
         "summary": "본인 정보 수정",
         "operationId": "patch_api_v1_auth_account",
-        "description": "Authorization: Bearer <JWT> 헤더로 인증하고 password 또는 display_name 중 하나 이상을 JSON 본문으로 전달해 본인 정보를 부분 수정합니다. 생략한 값은 유지하며 빈 객체나 정의되지 않은 필드를 전달하면 오류 코드 400을 반환합니다. password 또는 display_name에 null을 전달할 수 없습니다. 비밀번호를 변경하면 저장된 해시와 token_version을 한 트랜잭션으로 갱신하고 기존 JWT를 모두 폐기합니다. 성공하면 변경된 계정 정보를 반환합니다.",
+        "description": "Bearer JWT로 인증한 본인의 계정을 수정합니다. password, display_name, profile_image 중 하나 이상을 JSON으로 전달합니다. profile_image는 접두사가 없는 표준 Base64이며 JPEG, PNG, WebP, HEIC/HEIF 단일 이미지(최대 5 MiB, 1,600만 픽셀)를 허용합니다. 방향 보정 후 가운데에서 가로·세로 각각 최대 500px로 잘라 PNG로 저장합니다. null은 이미지 삭제이며 생략한 값은 유지합니다. password 변경에는 current_password가 필요하며 성공하면 기존 JWT를 모두 폐기합니다. 성공 응답은 username, display_name, profile_image를 포함합니다.",
         "responses": {
           "200": {
             "description": "본인 정보 수정이 완료되었습니다.",
@@ -1225,17 +1249,39 @@
                       "type": "string"
                     },
                     "data": {
-                      "type": "object",
-                      "required": [
-                        "display_name"
-                      ],
+                      "additionalProperties": false,
                       "properties": {
+                        "username": {
+                          "description": "소문자로 정규화한 로그인 아이디입니다.",
+                          "title": "Username",
+                          "type": "string"
+                        },
                         "display_name": {
-                          "type": "string",
-                          "description": "저장된 표시 이름입니다."
+                          "description": "저장된 표시 이름입니다.",
+                          "title": "Display Name",
+                          "type": "string"
+                        },
+                        "profile_image": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "contentEncoding": "base64",
+                          "contentMediaType": "image/png",
+                          "description": "Base64로 인코딩된 PNG 이미지입니다. 이미지가 없으면 null입니다.",
+                          "title": "Profile Image"
                         }
                       },
-                      "additionalProperties": false
+                      "required": [
+                        "username",
+                        "display_name",
+                        "profile_image"
+                      ],
+                      "type": "object"
                     }
                   },
                   "additionalProperties": false
@@ -1245,7 +1291,9 @@
                   "code": "SUCCESS",
                   "message": "The request has been accepted and processed.",
                   "data": {
-                    "display_name": "새 이름"
+                    "username": "user123",
+                    "display_name": "새 이름",
+                    "profile_image": null
                   }
                 }
               }
@@ -1473,6 +1521,20 @@
                     "format": "password",
                     "writeOnly": true,
                     "description": "password를 바꿀 때 확인할 현재 비밀번호입니다. password와 함께 전달해야 합니다."
+                  },
+                  "profile_image": {
+                    "anyOf": [
+                      {
+                        "maxLength": 6990508,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "contentEncoding": "base64",
+                    "description": "Base64 프로필 이미지입니다. null을 보내면 기존 이미지를 삭제합니다."
                   }
                 },
                 "minProperties": 1,
@@ -3766,7 +3828,7 @@
         ],
         "summary": "거래 목록 조회",
         "operationId": "get_api_v1_transaction",
-        "description": "- 인증된 사용자의 거래을 출력합니다. 출력 포맷은 JSON입니다.\n- 사용자 ID는 첨부된 JWT 페이로드 정보로 확인합니다.\n\nJWT는 Authorization: Bearer <JWT> 헤더로 전달합니다. query나 본문의 token으로 대체하지 않습니다. 조회 조건은 query, 대상 ID는 경로로 전달하며 요청 본문은 사용하지 않습니다.\n\ncategory는 고정 목록을 사용하며 expense에는 지출 카테고리, income에는 수입 카테고리만 허용합니다.\n\n기간은 한국 시간(Asia/Seoul) 기준으로 시작일과 종료일을 모두 포함합니다. start_date <= 거래 date <= end_date인 거래가 대상입니다. 예를 들어 2026-09-01부터 2026-09-30까지 요청하면 9월 30일 거래도 포함합니다. 시작일과 종료일이 같으면 해당 하루의 거래를 대상으로 합니다.\n\n조회 기간 생략 규칙:\n- start_date와 end_date를 모두 생략하면 인증된 사용자의 전체 거래를 조회합니다.\n- start_date만 지정하면 거래 date >= start_date인 거래를 조회하며 종료 날짜 제한은 없습니다.\n- end_date만 지정하면 거래 date <= end_date인 거래를 조회하며 시작 날짜 제한은 없습니다.\n- 둘 다 지정하면 start_date <= 거래 date <= end_date인 거래를 조회합니다.\n- 두 날짜를 지정했을 때 start_date > end_date이면 오류 코드 400을 반환합니다.\n\n조회 결과는 거래 date 내림차순, 같은 날짜에서는 time 내림차순으로 반환합니다. 최신 날짜의 가장 늦은 거래 시각부터 표시합니다. 시각이 없는 거래(time=null)는 같은 날짜에서 시각이 있는 모든 거래 뒤에 배치합니다.\n\n각 거래는 id, date, time, type, source, category, amount를 항상 반환합니다. 이 필드 중 time만 null을 허용합니다.\n\n정의되지 않은 query 또는 본문 필드를 전달하거나 GET·DELETE 요청에 본문을 포함하면 오류 코드 400을 반환합니다. 숫자 필드는 문자열·불리언으로 대체할 수 없습니다.\n\n조회 대상이 없으면 200과 data: []를 반환합니다. date와 time이 같거나 둘 다 time이 null이면 id 내림차순으로 정렬합니다. store_name과 note도 항상 반환하며 미설정이면 null입니다. limit과 cursor를 사용하는 커서 페이지 방식으로 반환합니다. next_cursor가 null이면 마지막 페이지입니다.",
+        "description": "- 인증된 사용자의 거래을 출력합니다. 출력 포맷은 JSON입니다.\n- 사용자 ID는 첨부된 JWT 페이로드 정보로 확인합니다.\n\nJWT는 Authorization: Bearer <JWT> 헤더로 전달합니다. query나 본문의 token으로 대체하지 않습니다. 조회 조건은 query, 대상 ID는 경로로 전달하며 요청 본문은 사용하지 않습니다.\n\ncategory는 고정 목록을 사용하며 expense에는 지출 카테고리, income에는 수입 카테고리만 허용합니다.\n\n기간은 한국 시간(Asia/Seoul) 기준으로 시작일과 종료일을 모두 포함합니다. start_date <= 거래 date <= end_date인 거래가 대상입니다. 예를 들어 2026-09-01부터 2026-09-30까지 요청하면 9월 30일 거래도 포함합니다. 시작일과 종료일이 같으면 해당 하루의 거래를 대상으로 합니다.\n\n조회 기간 생략 규칙:\n- start_date와 end_date를 모두 생략하면 인증된 사용자의 전체 거래를 조회합니다.\n- start_date만 지정하면 거래 date >= start_date인 거래를 조회하며 종료 날짜 제한은 없습니다.\n- end_date만 지정하면 거래 date <= end_date인 거래를 조회하며 시작 날짜 제한은 없습니다.\n- 둘 다 지정하면 start_date <= 거래 date <= end_date인 거래를 조회합니다.\n- 두 날짜를 지정했을 때 start_date > end_date이면 오류 코드 400을 반환합니다.\n\n조회 결과는 거래 date 내림차순, 같은 날짜에서는 id 내림차순으로 반환합니다.\n\n각 거래는 id, date, time, type, source, category, amount를 항상 반환합니다. 이 필드 중 time만 null을 허용합니다.\n\n정의되지 않은 query 또는 본문 필드를 전달하거나 GET·DELETE 요청에 본문을 포함하면 오류 코드 400을 반환합니다. 숫자 필드는 문자열·불리언으로 대체할 수 없습니다.\n\n조회 대상이 없으면 200과 data.items: []를 반환합니다. store_name과 note도 항상 반환하며 미설정이면 null입니다. limit과 cursor를 사용하는 커서 페이지 방식으로 반환합니다. next_cursor가 null이면 마지막 페이지입니다.",
         "parameters": [
           {
             "name": "start_date",
@@ -3810,10 +3872,11 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "이전 응답의 next_cursor입니다. 첫 조회에서는 생략합니다.",
+            "description": "이전 응답의 next_cursor를 그대로 사용합니다. 첫 조회에서는 생략합니다.",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 32
             }
           }
         ],
@@ -3848,142 +3911,7 @@
                         "items": {
                           "type": "array",
                           "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "description": "거래 항목의 식별 ID입니다. 1 이상의 정수이며 null을 허용하지 않습니다."
-                              },
-                              "date": {
-                                "type": "string",
-                                "description": "수입·지출이 실제 발생한 한국 시간(Asia/Seoul) 기준 날짜입니다. YYYY-MM-DD 형식으로 전달하며 거래 시각은 time 필드로 전달합니다. 원본 일시는 한국 시간으로 변환하여 date와 time으로 나눕니다.",
-                                "format": "date",
-                                "example": "2026-09-15",
-                                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\\s\\S])"
-                              },
-                              "type": {
-                                "type": "string",
-                                "enum": [
-                                  "expense",
-                                  "income"
-                                ],
-                                "description": "항목 종류입니다. expense=지출, income=수입. 지정된 소문자 문자열만 허용합니다."
-                              },
-                              "source": {
-                                "type": "string",
-                                "enum": [
-                                  "financial_sync",
-                                  "manual",
-                                  "ocr"
-                                ],
-                                "description": "항목 출처입니다. financial_sync=금융사 연동, manual=수기 작성, ocr=영수증 OCR. 지정된 소문자 문자열만 허용합니다."
-                              },
-                              "category": {
-                                "$ref": "#/components/schemas/BudgetCategory"
-                              },
-                              "store_name": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ],
-                                "description": "이 수입/지출이 발생한 출처입니다. (예: 가게 상호 명, 회사 이름, 사람 이름 등)",
-                                "default": null,
-                                "maxLength": 200
-                              },
-                              "note": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ],
-                                "description": "이 항목에 대한 메모입니다. (예: 구매 품목 등)",
-                                "default": null,
-                                "maxLength": 2000
-                              },
-                              "amount": {
-                                "type": "integer",
-                                "description": "수입·지출 모두 1원 이상 100,000,000원 이하의 정수로 표현하는 변동 금액입니다. 0원·음수·소수는 허용하지 않습니다. (단위: KRW)",
-                                "minimum": 1,
-                                "maximum": 100000000
-                              },
-                              "time": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ],
-                                "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?![\\s\\S])",
-                                "description": "거래가 실제 발생한 한국 시간(Asia/Seoul) 기준 시각입니다. 값이 있으면 24시간제 HH:mm:ss 형식(예: 16:50:11)이며 시간대 표기를 포함하지 않습니다. 출처와 관계없이 시각을 모르면 null로 저장하며 00:00:00으로 대체하지 않습니다. 금융사 연동·영수증 OCR에 실제 거래 시각이 있으면 보존합니다. 수동 입력도 시각은 선택입니다. 조회 결과에는 time 필드를 항상 포함하며 시각이 없으면 null입니다.",
-                                "example": "16:50:11"
-                              },
-                              "created_at": {
-                                "type": "string",
-                                "format": "date-time",
-                                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\+09:00(?![\\s\\S])",
-                                "example": "2026-09-16T14:30:00+09:00",
-                                "description": "거래가 처음 저장된 한국 시간입니다. 생성 후 바뀌지 않습니다."
-                              },
-                              "updated_at": {
-                                "type": "string",
-                                "format": "date-time",
-                                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\+09:00(?![\\s\\S])",
-                                "example": "2026-09-16T14:30:00+09:00",
-                                "description": "거래 내용이 마지막으로 변경된 한국 시간입니다. 생성 시에는 created_at과 같습니다."
-                              }
-                            },
-                            "allOf": [
-                              {
-                                "if": {
-                                  "required": [
-                                    "type"
-                                  ],
-                                  "properties": {
-                                    "type": {
-                                      "const": "expense"
-                                    }
-                                  }
-                                },
-                                "then": {
-                                  "properties": {
-                                    "category": {
-                                      "$ref": "#/components/schemas/ExpenseCategory"
-                                    }
-                                  }
-                                }
-                              },
-                              {
-                                "if": {
-                                  "required": [
-                                    "type"
-                                  ],
-                                  "properties": {
-                                    "type": {
-                                      "const": "income"
-                                    }
-                                  }
-                                },
-                                "then": {
-                                  "properties": {
-                                    "category": {
-                                      "$ref": "#/components/schemas/IncomeCategory"
-                                    }
-                                  }
-                                }
-                              }
-                            ],
-                            "required": [
-                              "id",
-                              "date",
-                              "type",
-                              "source",
-                              "category",
-                              "store_name",
-                              "note",
-                              "amount",
-                              "time",
-                              "created_at",
-                              "updated_at"
-                            ],
-                            "additionalProperties": false
+                            "$ref": "#/components/schemas/TransactionData"
                           }
                         },
                         "next_cursor": {
@@ -4637,115 +4565,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "date": {
-                    "type": "string",
-                    "description": "수입·지출이 실제 발생한 한국 시간(Asia/Seoul) 기준 날짜입니다. YYYY-MM-DD 형식으로 전달하며 거래 시각은 time 필드로 전달합니다. 원본 일시는 한국 시간으로 변환하여 date와 time으로 나눕니다.",
-                    "format": "date",
-                    "example": "2026-09-15",
-                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\\s\\S])"
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": [
-                      "expense",
-                      "income"
-                    ],
-                    "description": "항목 종류입니다. expense=지출, income=수입. 지정된 소문자 문자열만 허용합니다."
-                  },
-                  "source": {
-                    "type": "string",
-                    "enum": [
-                      "financial_sync",
-                      "manual",
-                      "ocr"
-                    ],
-                    "description": "항목 출처입니다. financial_sync=금융사 연동, manual=수기 작성, ocr=영수증 OCR. 지정된 소문자 문자열만 허용합니다."
-                  },
-                  "category": {
-                    "$ref": "#/components/schemas/BudgetCategory"
-                  },
-                  "store_name": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "description": "이 수입/지출이 발생한 출처입니다. (예: 가게 상호 명, 회사 이름, 사람 이름 등) 생략하거나 null을 전달하면 미설정으로 저장합니다.",
-                    "maxLength": 200
-                  },
-                  "note": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "description": "이 항목에 대한 메모입니다. (예: 구매 품목 등) 생략하거나 null을 전달하면 미설정으로 저장합니다.",
-                    "maxLength": 2000
-                  },
-                  "amount": {
-                    "type": "integer",
-                    "description": "수입·지출 모두 1원 이상 100,000,000원 이하의 정수로 표현하는 변동 금액입니다. 0원·음수·소수는 허용하지 않습니다. (단위: KRW)",
-                    "minimum": 1,
-                    "maximum": 100000000
-                  },
-                  "time": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?![\\s\\S])",
-                    "description": "거래가 실제 발생한 한국 시간(Asia/Seoul) 기준 시각입니다. 값이 있으면 24시간제 HH:mm:ss 형식(예: 16:50:11)이며 시간대 표기를 포함하지 않습니다. 출처와 관계없이 시각을 모르면 null로 저장하며 00:00:00으로 대체하지 않습니다. 금융사 연동·영수증 OCR에 실제 거래 시각이 있으면 보존합니다. 수동 입력도 시각은 선택입니다. 생략하거나 null을 전달하면 시각 없이 저장합니다.",
-                    "example": "16:50:11"
-                  }
-                },
-                "required": [
-                  "date",
-                  "type",
-                  "source",
-                  "category",
-                  "amount"
-                ],
-                "allOf": [
-                  {
-                    "if": {
-                      "required": [
-                        "type"
-                      ],
-                      "properties": {
-                        "type": {
-                          "const": "expense"
-                        }
-                      }
-                    },
-                    "then": {
-                      "properties": {
-                        "category": {
-                          "$ref": "#/components/schemas/ExpenseCategory"
-                        }
-                      }
-                    }
-                  },
-                  {
-                    "if": {
-                      "required": [
-                        "type"
-                      ],
-                      "properties": {
-                        "type": {
-                          "const": "income"
-                        }
-                      }
-                    },
-                    "then": {
-                      "properties": {
-                        "category": {
-                          "$ref": "#/components/schemas/IncomeCategory"
-                        }
-                      }
-                    }
-                  }
-                ],
-                "additionalProperties": false
+                "$ref": "#/components/schemas/TransactionCreate"
               }
             }
           }
@@ -4758,6 +4578,376 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/v1/transaction/batch": {
+      "post": {
+        "tags": [
+          "거래"
+        ],
+        "summary": "기간 내 거래 일괄 생성",
+        "operationId": "post_api_v1_transaction_batch",
+        "description": "인증된 사용자의 거래 1~500건을 한 번에 생성합니다. 모든 거래 날짜가 기간에 포함되어야 하며 하나라도 잘못되면 전체 요청이 실패합니다. 성공하면 입력 순서대로 저장한 거래들을 반환합니다. 선택적 Idempotency-Key를 전달하면 동일 요청을 24시간 동안 중복 저장하지 않고 최초 성공 응답을 반환합니다.",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": true,
+            "description": "대상 기간의 시작일입니다. YYYY-MM-DD 형식이며 해당 날짜를 포함합니다.",
+            "schema": {
+              "type": "string",
+              "description": "대상 기간의 시작일입니다. YYYY-MM-DD 형식이며 해당 날짜를 포함합니다.",
+              "format": "date",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\\s\\S])",
+              "example": "2026-09-01"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": true,
+            "description": "대상 기간의 종료일입니다. YYYY-MM-DD 형식이며 해당 날짜를 포함합니다.",
+            "schema": {
+              "type": "string",
+              "description": "대상 기간의 종료일입니다. YYYY-MM-DD 형식이며 해당 날짜를 포함합니다.",
+              "format": "date",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\\s\\S])",
+              "example": "2026-09-30"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "$ref": "#/components/schemas/TransactionCreate"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "items": [
+                  {
+                    "date": "2026-09-21",
+                    "type": "expense",
+                    "source": "manual",
+                    "category": "food",
+                    "amount": 12000
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "거래 항목을 생성하고 저장된 거래를 반환합니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "const": 201
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TransactionData"
+                      }
+                    },
+                    "code": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]*$",
+                      "description": "클라이언트가 분기 처리할 안정적인 응답 코드입니다."
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "status": 201,
+                  "message": "The request has been accepted and processed.",
+                  "data": [
+                    {
+                      "id": 102342,
+                      "date": "2026-09-16",
+                      "type": "expense",
+                      "source": "financial_sync",
+                      "category": "health",
+                      "store_name": "싸다홈쇼핑",
+                      "note": "스마트 육각수 음이온 얼음 정수기",
+                      "amount": 784200,
+                      "time": "09:30:00",
+                      "created_at": "2026-09-16T14:30:00+09:00",
+                      "updated_at": "2026-09-16T14:30:00+09:00"
+                    }
+                  ],
+                  "code": "SUCCESS"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "개인정보 응답의 캐시 저장 금지"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/paths/~1api~1v1~1transaction/get/responses/400"
+          },
+          "401": {
+            "$ref": "#/paths/~1api~1v1~1transaction/get/responses/401"
+          },
+          "409": {
+            "description": "이미 사용한 Idempotency-Key로 다른 요청을 제출했습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "클라이언트가 분기 처리할 안정적인 응답 코드입니다.",
+                      "const": "IDEMPOTENCY_KEY_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "null"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "idempotency_key_conflict": {
+                    "summary": "IDEMPOTENCY_KEY_CONFLICT",
+                    "value": {
+                      "status": 409,
+                      "code": "IDEMPOTENCY_KEY_CONFLICT",
+                      "message": "The idempotency key was already used with a different request.",
+                      "data": null
+                    }
+                  },
+                  "idempotency_request_in_progress": {
+                    "summary": "IDEMPOTENCY_REQUEST_IN_PROGRESS",
+                    "value": {
+                      "status": 409,
+                      "code": "IDEMPOTENCY_REQUEST_IN_PROGRESS",
+                      "message": "A request with this idempotency key is still being processed.",
+                      "data": null
+                    }
+                  }
+                },
+                "example": {
+                  "status": 409,
+                  "data": null,
+                  "message": "The idempotency key has already been used for a different request.",
+                  "code": "IDEMPOTENCY_KEY_CONFLICT"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "개인정보 응답의 캐시 저장 금지"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/paths/~1api~1v1~1transaction/get/responses/503"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "거래"
+        ],
+        "summary": "기간 내 거래 일괄 삭제",
+        "operationId": "delete_api_v1_transaction_batch",
+        "description": "인증된 사용자의 거래만 삭제합니다. 시작일과 종료일을 포함합니다. 본문은 사용하지 않습니다. limit을 지정하면 GET과 같은 date·id 역순의 한 페이지를 삭제합니다. 다음 페이지는 동일한 기간과 limit에 next_cursor를 전달합니다. 일치하는 거래가 없으면 deleted_count는 0입니다.",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": true,
+            "description": "대상 기간의 시작일입니다. YYYY-MM-DD 형식이며 해당 날짜를 포함합니다.",
+            "schema": {
+              "type": "string",
+              "description": "대상 기간의 시작일입니다. YYYY-MM-DD 형식이며 해당 날짜를 포함합니다.",
+              "format": "date",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\\s\\S])",
+              "example": "2026-09-01"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": true,
+            "description": "대상 기간의 종료일입니다. YYYY-MM-DD 형식이며 해당 날짜를 포함합니다.",
+            "schema": {
+              "type": "string",
+              "description": "대상 기간의 종료일입니다. YYYY-MM-DD 형식이며 해당 날짜를 포함합니다.",
+              "format": "date",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\\s\\S])",
+              "example": "2026-09-30"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1~100 사이로 지정하면 해당 페이지를 삭제합니다. 생략하면 대상 거래 전체를 삭제합니다.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "이전 응답의 next_cursor를 그대로 사용합니다. 첫 조회에서는 생략합니다.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "정상 처리됨.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "const": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "deleted_count",
+                        "next_cursor"
+                      ],
+                      "properties": {
+                        "deleted_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "next_cursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]*$",
+                      "description": "클라이언트가 분기 처리할 안정적인 응답 코드입니다."
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "status": 200,
+                  "message": "The request has been accepted and processed.",
+                  "data": {
+                    "deleted_count": 2,
+                    "next_cursor": null
+                  },
+                  "code": "SUCCESS"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "개인정보 응답의 캐시 저장 금지"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/paths/~1api~1v1~1transaction/get/responses/400"
+          },
+          "401": {
+            "$ref": "#/paths/~1api~1v1~1transaction/get/responses/401"
+          },
+          "503": {
+            "$ref": "#/paths/~1api~1v1~1transaction/get/responses/503"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
           }
         ]
       }
@@ -6706,6 +6896,255 @@
           }
         ],
         "description": "expense에는 지출 카테고리, income에는 수입 카테고리만 허용합니다."
+      },
+      "TransactionCreate": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "수입·지출이 실제 발생한 한국 시간(Asia/Seoul) 기준 날짜입니다. YYYY-MM-DD 형식으로 전달하며 거래 시각은 time 필드로 전달합니다. 원본 일시는 한국 시간으로 변환하여 date와 time으로 나눕니다.",
+            "format": "date",
+            "example": "2026-09-15",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\\s\\S])"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "expense",
+              "income"
+            ],
+            "description": "항목 종류입니다. expense=지출, income=수입. 지정된 소문자 문자열만 허용합니다."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "financial_sync",
+              "manual",
+              "ocr"
+            ],
+            "description": "항목 출처입니다. financial_sync=금융사 연동, manual=수기 작성, ocr=영수증 OCR. 지정된 소문자 문자열만 허용합니다."
+          },
+          "category": {
+            "$ref": "#/components/schemas/BudgetCategory"
+          },
+          "store_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "이 수입/지출이 발생한 출처입니다. (예: 가게 상호 명, 회사 이름, 사람 이름 등) 생략하거나 null을 전달하면 미설정으로 저장합니다.",
+            "maxLength": 200
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "이 항목에 대한 메모입니다. (예: 구매 품목 등) 생략하거나 null을 전달하면 미설정으로 저장합니다.",
+            "maxLength": 2000
+          },
+          "amount": {
+            "type": "integer",
+            "description": "수입·지출 모두 1원 이상 100,000,000원 이하의 정수로 표현하는 변동 금액입니다. 0원·음수·소수는 허용하지 않습니다. (단위: KRW)",
+            "minimum": 1,
+            "maximum": 100000000
+          },
+          "time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?![\\s\\S])",
+            "description": "거래가 실제 발생한 한국 시간(Asia/Seoul) 기준 시각입니다. 값이 있으면 24시간제 HH:mm:ss 형식(예: 16:50:11)이며 시간대 표기를 포함하지 않습니다. 출처와 관계없이 시각을 모르면 null로 저장하며 00:00:00으로 대체하지 않습니다. 금융사 연동·영수증 OCR에 실제 거래 시각이 있으면 보존합니다. 수동 입력도 시각은 선택입니다. 생략하거나 null을 전달하면 시각 없이 저장합니다.",
+            "example": "16:50:11"
+          }
+        },
+        "required": [
+          "date",
+          "type",
+          "source",
+          "category",
+          "amount"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "const": "expense"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "category": {
+                  "$ref": "#/components/schemas/ExpenseCategory"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "const": "income"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "category": {
+                  "$ref": "#/components/schemas/IncomeCategory"
+                }
+              }
+            }
+          }
+        ],
+        "additionalProperties": false
+      },
+      "TransactionData": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "거래 항목의 식별 ID입니다. 1 이상의 정수이며 null을 허용하지 않습니다."
+          },
+          "date": {
+            "type": "string",
+            "description": "수입·지출이 실제 발생한 한국 시간(Asia/Seoul) 기준 날짜입니다. YYYY-MM-DD 형식으로 전달하며 거래 시각은 time 필드로 전달합니다. 원본 일시는 한국 시간으로 변환하여 date와 time으로 나눕니다.",
+            "format": "date",
+            "example": "2026-09-15",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\\s\\S])"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "expense",
+              "income"
+            ],
+            "description": "항목 종류입니다. expense=지출, income=수입. 지정된 소문자 문자열만 허용합니다."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "financial_sync",
+              "manual",
+              "ocr"
+            ],
+            "description": "항목 출처입니다. financial_sync=금융사 연동, manual=수기 작성, ocr=영수증 OCR. 지정된 소문자 문자열만 허용합니다."
+          },
+          "category": {
+            "$ref": "#/components/schemas/BudgetCategory"
+          },
+          "store_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "이 수입/지출이 발생한 출처입니다. (예: 가게 상호 명, 회사 이름, 사람 이름 등)",
+            "default": null,
+            "maxLength": 200
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "이 항목에 대한 메모입니다. (예: 구매 품목 등)",
+            "default": null,
+            "maxLength": 2000
+          },
+          "amount": {
+            "type": "integer",
+            "description": "수입·지출 모두 1원 이상 100,000,000원 이하의 정수로 표현하는 변동 금액입니다. 0원·음수·소수는 허용하지 않습니다. (단위: KRW)",
+            "minimum": 1,
+            "maximum": 100000000
+          },
+          "time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?![\\s\\S])",
+            "description": "거래가 실제 발생한 한국 시간(Asia/Seoul) 기준 시각입니다. 값이 있으면 24시간제 HH:mm:ss 형식(예: 16:50:11)이며 시간대 표기를 포함하지 않습니다. 출처와 관계없이 시각을 모르면 null로 저장하며 00:00:00으로 대체하지 않습니다. 금융사 연동·영수증 OCR에 실제 거래 시각이 있으면 보존합니다. 수동 입력도 시각은 선택입니다. 조회 결과에는 time 필드를 항상 포함하며 시각이 없으면 null입니다.",
+            "example": "16:50:11"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\+09:00(?![\\s\\S])",
+            "example": "2026-09-16T14:30:00+09:00",
+            "description": "거래가 처음 저장된 한국 시간입니다. 생성 후 바뀌지 않습니다."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\+09:00(?![\\s\\S])",
+            "example": "2026-09-16T14:30:00+09:00",
+            "description": "거래 내용이 마지막으로 변경된 한국 시간입니다. 생성 시에는 created_at과 같습니다."
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "const": "expense"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "category": {
+                  "$ref": "#/components/schemas/ExpenseCategory"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "const": "income"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "category": {
+                  "$ref": "#/components/schemas/IncomeCategory"
+                }
+              }
+            }
+          }
+        ],
+        "required": [
+          "id",
+          "date",
+          "type",
+          "source",
+          "category",
+          "store_name",
+          "note",
+          "amount",
+          "time",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {
