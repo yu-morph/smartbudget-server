@@ -136,8 +136,16 @@ class IdempotencyConflictEnvelope(Envelope[None]):
     message: str
 
 
-class ProviderErrorEnvelope(Envelope[None]):
-    """외부 LLM 호출 실패의 502 응답 봉투입니다."""
+class ProviderErrorData(BaseModel):
+    """실패한 Azure 호출의 프롬프트와 사용 가능한 오류 원문을 전달합니다."""
+
+    model_config = ConfigDict(extra="forbid")
+    provider_error_body: str | None = None
+    request_prompt_fulltext: str | None = None
+
+
+class ProviderErrorEnvelope(Envelope[ProviderErrorData | None]):
+    """외부 LLM 호출 실패를 안내하고 응답 본문이 있으면 함께 반환합니다."""
 
     status: Literal[502]
     code: Literal["REPORT_PROVIDER_ERROR"]
@@ -154,8 +162,15 @@ class ServiceUnavailableEnvelope(Envelope[None]):
     message: str
 
 
-class ProviderTimeoutEnvelope(Envelope[None]):
-    """외부 LLM 제한 시간 초과의 504 응답 봉투입니다."""
+class ProviderTimeoutData(BaseModel):
+    """시간 초과가 난 Azure 호출의 메시지 전문을 전달합니다."""
+
+    model_config = ConfigDict(extra="forbid")
+    request_prompt_fulltext: str
+
+
+class ProviderTimeoutEnvelope(Envelope[ProviderTimeoutData | None]):
+    """외부 LLM 제한 시간 초과와 사용한 프롬프트를 담는 504 응답입니다."""
 
     status: Literal[504]
     code: Literal["REPORT_PROVIDER_TIMEOUT"]

@@ -10,9 +10,9 @@ Python 서버는 공통 응답 code, 로그인·갱신의 토큰 만료 정보, 
 
 ## 공통 계약
 
-POST·PUT·PATCH는 `Content-Type: application/json`을 사용합니다. 알 수 없는 필드나 잘못된 자료형을 전달하거나 허용되지 않은 쿼리 파라미터 또는 GET·DELETE 본문을 전달하면 오류 코드 400을 반환합니다. 오류 응답에 입력값·비밀번호·토큰·DB 경로를 포함하지 않습니다. 응답에는 `Cache-Control: no-store`를 설정합니다.
+POST·PUT·PATCH는 `Content-Type: application/json`을 사용합니다. 알 수 없는 필드나 잘못된 자료형을 전달하거나 허용되지 않은 쿼리 파라미터 또는 GET·DELETE 본문을 전달하면 오류 코드 400을 반환합니다. 인증 API 오류 응답에 입력값·비밀번호·토큰·DB 경로를 포함하지 않습니다. 응답에는 `Cache-Control: no-store`를 설정합니다.
 
-모든 API 응답은 HTTP 상태와 같은 `status`, 안정적인 영문 `code`, 영문 `message`, `data`를 포함합니다. 오류의 `data`는 null이며 클라이언트는 message가 아니라 code로 분기합니다.
+모든 API 응답은 HTTP 상태와 같은 `status`, 안정적인 영문 `code`, 영문 `message`, `data`를 포함합니다. 인증 API 오류의 `data`는 null입니다. 클라이언트는 `code`로 분기합니다.
 
 ```json
 {"status":200,"code":"SUCCESS","message":"The request has been accepted and processed.","data":null}

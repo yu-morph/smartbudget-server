@@ -196,7 +196,7 @@ def list_report(
             IdempotencyConflictEnvelope, "리포트 생성 요청이 충돌했습니다."
         ),
         502: documented_response(
-            ProviderErrorEnvelope, "외부 LLM 호출에 실패했습니다."
+            ProviderErrorEnvelope, "외부 LLM 호출 실패 원인에 따라 메시지를 반환합니다."
         ),
         503: SERVICE_UNAVAILABLE_RESPONSE,
         504: documented_response(
@@ -290,17 +290,19 @@ def _create_for_user(
         report_input = build_report_input(transactions, start, end, context)
         try:
             full_report = generate_report(request.app.state.settings, report_input)
-        except ProviderTimeoutError:
+        except ProviderTimeoutError as exc:
             return respond(
                 504,
+                data=exc.data or None,
                 code="REPORT_PROVIDER_TIMEOUT",
                 message="The report generation service request timed out.",
             )
-        except ProviderFailureError:
+        except ProviderFailureError as exc:
             return respond(
                 502,
+                data=exc.data or None,
                 code="REPORT_PROVIDER_ERROR",
-                message="The report generation service request failed.",
+                message=str(exc),
             )
         generated_at = datetime.now(timezone.utc)
         processing_time_ms = max(0, int((perf_counter() - timer) * 1000))

@@ -146,7 +146,7 @@ def test_report_rejects_invalid_context(client, invalid_fields):
 
 
 def test_report_provider_failure_keeps_existing_report(client, monkeypatch):
-    """외부 분석 실패는 기존 리포트를 덮어쓰지 않습니다."""
+    """외부 실패 메시지·본문·프롬프트를 반환하고 이전 리포트를 유지합니다."""
     from smartbudget_server.report.provider import ProviderFailureError
 
     token = token_for(client)
@@ -156,12 +156,25 @@ def test_report_provider_failure_keeps_existing_report(client, monkeypatch):
 
     def fail(settings, aggregate):
         """외부 서비스 오류를 재현합니다."""
-        raise ProviderFailureError()
+        error = ProviderFailureError(
+            "The AI service rate limit was reached (HTTP 429). Try again later.",
+            provider_error_body='{"error":{"message":"Rate limit exceeded"}}',
+        )
+        error.data["request_prompt_fulltext"] = '[{"role":"user","content":"거래"}]'
+        raise error
 
     monkeypatch.setattr("smartbudget_server.report.router.generate_report", fail)
     failed = client.post(PREFIX, headers=headers(token), json=body)
     assert failed.status_code == 502
-    assert failed.json()["code"] == "REPORT_PROVIDER_ERROR"
+    assert failed.json() == {
+        "status": 502,
+        "code": "REPORT_PROVIDER_ERROR",
+        "message": "The AI service rate limit was reached (HTTP 429). Try again later.",
+        "data": {
+            "provider_error_body": '{"error":{"message":"Rate limit exceeded"}}',
+            "request_prompt_fulltext": '[{"role":"user","content":"거래"}]',
+        },
+    }
     assert (
         client.get(f"{PREFIX}/{first['id']}", headers=headers(token)).json()["data"][
             "full_report"
