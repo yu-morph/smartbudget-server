@@ -60,12 +60,16 @@ class ScheduledReport(Base):
 
 
 def begin_report(
-    engine, user_id: int, period_type: str, period_start: str, key: str | None
+    engine,
+    user_id: int,
+    period_type: str,
+    period_start: str,
+    key: str | None,
+    fingerprint: str,
 ):
-    """키 검사와 기간 잠금을 한 트랜잭션에서 확보합니다."""
+    """요청 지문으로 키를 검사하고 기간 잠금을 한 트랜잭션에서 확보합니다."""
     now = time.time()
     owner = uuid4().hex
-    fingerprint = period_type + ":" + period_start
     with write_session(engine) as session:
         if key is not None:
             record = session.get(IdempotencyRecord, (user_id, "report", key))

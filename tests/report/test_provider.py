@@ -13,15 +13,16 @@ from smartbudget_server.report.provider import (
 )
 
 
-def test_provider_sends_only_aggregate(monkeypatch):
-    """모델 요청에는 비식별 집계만 포함하고 Markdown을 반환합니다."""
+def test_provider_sends_xml_template_and_report_input(monkeypatch):
+    """모델 요청에 XML 템플릿과 거래 입력을 분리하고 부분 응답도 반환합니다."""
     seen = []
+    partial_report = "<report><a_word_from_ai>결과</a_word_from_ai></report>"
 
     def handler(request):
         """외부 서비스 응답을 대체하고 실제 HTTP 본문을 검사합니다."""
         seen.append(json.loads(request.content))
         return httpx.Response(
-            200, json={"choices": [{"message": {"content": "# 결과"}}]}
+            200, json={"choices": [{"message": {"content": partial_report}}]}
         )
 
     original = httpx.AsyncClient
@@ -37,14 +38,28 @@ def test_provider_sends_only_aggregate(monkeypatch):
         azure_openai_key="test-key",
         azure_openai_deployment="test-model",
     )
-    aggregate = {
-        "period_type": "daily",
+    report_input = {
         "period_start": "2026-09-16",
         "period_end": "2026-09-16",
-        "categories": [],
+        "transactions": [["2026-09-16", "expense", "food", 500]],
     }
-    assert generate_report(settings, aggregate) == "# 결과"
-    assert json.loads(seen[0]["messages"][1]["content"]) == aggregate
+    assert generate_report(settings, report_input) == partial_report
+    system, user = seen[0]["messages"]
+    assert system["role"] == "system"
+    for tag in (
+        "report",
+        "a_word_from_ai",
+        "top_spending_categories",
+        "spending_health",
+        "spending_by_day_of_the_week",
+        "tips_for_saving",
+        "tips_to_keep_it_up",
+        "tips_for_your_interests",
+        "news_driven_insights",
+    ):
+        assert f"<{tag}>" in system["content"]
+    assert user["role"] == "user"
+    assert json.loads(user["content"]) == report_input
     assert seen[0]["model"] == "test-model"
 
 

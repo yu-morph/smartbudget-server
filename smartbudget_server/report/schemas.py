@@ -29,11 +29,22 @@ class PeriodType(StrEnum):
 
 
 class ReportRequest(BaseModel):
-    """생성할 리포트의 기간 종류와 시작 날짜를 검증합니다."""
+    """수동·예약 리포트의 분석 기간과 선택적 앱 입력을 검증합니다."""
 
     model_config = ConfigDict(extra="forbid")
     period_type: PeriodType
     period_start: DateString
+    gender: str | None = None
+    age: Annotated[int, Field(strict=True, ge=10, le=150)] | None = None
+    job: str | None = None
+    company: str | None = None
+    education: str | None = None
+    loan: str | None = None
+    approach: str | None = None
+    interest: str | None = None
+    news: list[str] | None = Field(
+        default=None, description="앱이 최근 일주일간 수집한 기사 제목 목록입니다."
+    )
 
 
 class ReportSummary(BaseModel):
@@ -51,7 +62,13 @@ class ReportSummary(BaseModel):
 class ReportDetail(ReportSummary):
     """리포트 요약에 LLM이 생성한 전체 분석 내용을 더합니다."""
 
-    full_report: Annotated[str, Field(min_length=1)]
+    full_report: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description="새 리포트는 XML 형식이며 기존 리포트는 Markdown일 수 있습니다.",
+        ),
+    ]
 
 
 class GeneratedReport(ReportDetail):

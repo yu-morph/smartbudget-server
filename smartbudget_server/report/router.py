@@ -2,6 +2,7 @@
 
 from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
+from hashlib import sha256
 from time import perf_counter
 from typing import Annotated
 from zoneinfo import ZoneInfo
@@ -15,8 +16,8 @@ from smartbudget_server.auth.router import bearer, bearer_token
 from smartbudget_server.database import read_session, write_session
 from smartbudget_server.http import documented_response, respond
 from smartbudget_server.operations import begin_report, finish_report
-from smartbudget_server.report.aggregation import aggregate_transactions
 from smartbudget_server.report.models import Report
+from smartbudget_server.report.prompt import build_report_input
 from smartbudget_server.report.provider import (
     ProviderFailureError,
     ProviderTimeoutError,
@@ -203,6 +204,10 @@ def list_report(
         ),
     },
     summary="분석 요청",
+    description=(
+        "앱에서 보낸 선택적 사용자 정보와 기사 제목, 서버에 저장된 거래로 "
+        "소비 분석 리포트를 생성합니다. full_report에서 읽을 수 있는 XML 섹션만 표시합니다."
+    ),
     operation_id="post_api_v1_report",
 )
 def create_report(
@@ -221,7 +226,7 @@ def create_report(
         HTTPAuthorizationCredentials | None, Security(bearer)
     ] = None,
 ):
-    """지정 기간의 거래를 집계해 소비 분석 리포트를 생성합니다."""
+    """인증 사용자의 거래와 앱 입력으로 소비 분석 리포트를 생성합니다."""
     user = _current_user(request, credentials)
     return _create_for_user(request, user, payload, idempotency_key)
 
@@ -234,8 +239,21 @@ def _create_for_user(
     start, end = _period(payload.period_type, start)
     period_type = payload.period_type.value
     period_start = start.isoformat()
+    context = payload.model_dump(
+        mode="json", exclude={"period_type", "period_start"}, exclude_none=True
+    )
+    fingerprint = f"{period_type}:{period_start}"
+    if context:
+        fingerprint = sha256(
+            payload.model_dump_json(exclude_none=True).encode()
+        ).hexdigest()
     state, value = begin_report(
-        request.app.state.engine, user.id, period_type, period_start, idempotency_key
+        request.app.state.engine,
+        user.id,
+        period_type,
+        period_start,
+        idempotency_key,
+        fingerprint,
     )
     if state == "replay":
         return respond(200, value)
@@ -269,9 +287,9 @@ def _create_for_user(
                 message="No transactions were found for the requested period.",
             )
         snapshot = [(item.id, item.updated_at) for item in transactions]
-        aggregate = aggregate_transactions(transactions, period_type, start, end)
+        report_input = build_report_input(transactions, start, end, context)
         try:
-            full_report = generate_report(request.app.state.settings, aggregate)
+            full_report = generate_report(request.app.state.settings, report_input)
         except ProviderTimeoutError:
             return respond(
                 504,

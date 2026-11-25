@@ -3,7 +3,7 @@
   "info": {
     "title": "SmartBudget API 설계 명세",
     "version": "1.3.0",
-    "description": "인증·서버 버전·가계부·소비 분석·OCR에서 구현해야 할 API 계약의 단일 기준인 OpenAPI 3.1 문서입니다. 2026-09-24 현재 Python 서버는 공통 code 응답, 서버 버전 조회와 계정 PATCH·DELETE를 포함한 인증 API를 구현했습니다. 월별 예산 분리, 거래·리포트·OCR API는 아직 구현되지 않았습니다. 구현이 완료될 때까지 실행 중 서버의 /docs와 /openapi.json은 현재 구현 상태를 보여주고, 이 파일은 목표 계약을 나타냅니다.\n\n날짜·일시 형식 규칙: 달력 날짜는 ISO 8601 YYYY-MM-DD, 정확한 시점은 한국 시간 오프셋을 포함한 YYYY-MM-DDTHH:mm:ss+09:00을 사용합니다. 거래 시각처럼 날짜와 분리된 선택 시각은 HH:mm:ss 또는 null을 사용합니다."
+    "description": "인증·서버 버전·가계부·소비 분석·OCR에서 구현해야 할 API 계약의 단일 기준인 OpenAPI 3.1 문서입니다. 실행 중인 서버가 제공하는 스키마와 경로는 해당 서버의 /docs와 /openapi.json에서 확인할 수 있습니다.\n\n날짜·일시 형식 규칙: 달력 날짜는 ISO 8601 YYYY-MM-DD, 정확한 시점은 한국 시간 오프셋을 포함한 YYYY-MM-DDTHH:mm:ss+09:00을 사용합니다. 거래 시각처럼 날짜와 분리된 선택 시각은 HH:mm:ss 또는 null을 사용합니다."
   },
   "paths": {
     "/api/v1/version": {
@@ -2150,7 +2150,7 @@
         ],
         "summary": "분석 요청",
         "operationId": "post_api_v1_report",
-        "description": "- 일간·주간·월간·연간 소비 분석 리포트를 생성하거나 재생성하는 API입니다. 출력 포맷은 JSON입니다.\n- 사용자 ID는 첨부된 JWT 페이로드 정보로 확인합니다.\n- 백엔드는 분석 기간의 거래를 집계하고 식별 가능한 정보를 제거한 뒤 외부 LLM에 소비 분석을 요청합니다.\n\nJWT는 Authorization: Bearer <JWT> 헤더로 전달합니다. query나 본문의 token으로 대체하지 않습니다. period_type과 period_start는 JSON 본문으로만 전달합니다.\n\n기간은 한국 시간(Asia/Seoul) 기준입니다. daily는 period_start 하루, weekly는 period_start인 월요일부터 일요일, monthly는 period_start인 매월 1일부터 말일, yearly는 period_start인 1월 1일부터 12월 31일까지이며 서버가 period_end를 계산합니다. 현재 또는 과거 기간은 생성·재생성할 수 있습니다. 아직 시작하지 않은 미래 기간의 분석을 요청하면 오류 코드 400을 반환합니다.\n\n사용자·period_type·period_start 조합마다 리포트는 하나만 저장됩니다. 처음 생성하거나 기존 리포트를 재생성할 때 모두 HTTP 200을 반환합니다. 재생성은 기존 id를 유지한 채 full_report와 generated_at을 갱신하고 is_stale을 false로 바꿉니다.\n\n지정한 기간에 거래가 하나도 없으면 외부 LLM을 호출하지 않고 오류 코드 400과 message \"No transactions were found for the requested period.\"를 반환하며 리포트를 저장하거나 변경하지 않습니다. 외부 LLM 호출이 실패하면 오류 코드 502를 반환하고, 호출 시작부터 전체 응답 완료까지 60초를 초과하면 오류 코드 504를 반환합니다. 자동 재시도하지 않으며 실패하면 기존 리포트도 변경하지 않습니다.\n\n자동 생성은 공개 API가 아닌 내부 예약 작업이 같은 생성·갱신 규칙을 사용합니다. 매일 00:00에는 전날의 daily, 매주 월요일 00:00에는 직전 월요일부터 일요일의 weekly, 매월 1일 00:00에는 직전 달의 monthly, 매년 1월 1일 00:00에는 직전 연도의 yearly 리포트를 생성합니다. 모두 Asia/Seoul 기준이며 해당 기간에 거래가 없는 사용자는 건너뜁니다.\n\n거래 추가·수정·삭제는 해당 날짜를 포함하는 기존 daily·weekly·monthly·yearly 리포트의 is_stale을 true로 표시할 뿐 외부 LLM을 호출하지 않습니다. 거래 날짜가 바뀌면 변경 전·후 날짜가 속한 기존 리포트를 모두 stale로 표시합니다.\n\n분석은 수입·지출을 모두 집계하며 지출이 없으면 그 사실을 명시합니다. LLM에는 기간·종류·카테고리별 건수와 합계만 전달하고 사용자 ID·상호·메모·개별 거래 원문은 보내지 않습니다. 정의되지 않은 query 또는 본문 필드를 전달하면 오류 코드 400을 반환합니다.\n\nIdempotency-Key는 선택이며 1~128자의 영문·숫자·점·밑줄·콜론·하이픈을 허용합니다. 성공 응답은 인증 사용자·작업·키 기준으로 24시간 보관합니다. 같은 키와 같은 요청의 완료 후 재시도에는 최초 성공 상태와 본문을 반환합니다. 같은 키로 다른 요청을 보내면 IDEMPOTENCY_KEY_CONFLICT, 최초 요청이 처리 중이면 IDEMPOTENCY_REQUEST_IN_PROGRESS 오류 코드와 HTTP 409를 반환하며 작업을 중복 실행하지 않습니다. 실패 응답은 보관하지 않으며 24시간이 지나면 같은 키를 새 요청으로 처리할 수 있습니다.\n\n같은 사용자·period_type·period_start의 생성 작업은 한 번에 하나만 실행합니다. Idempotency-Key가 다른 요청이나 키가 없는 요청이 같은 기간의 처리 중 작업과 겹치면 REPORT_GENERATION_IN_PROGRESS 오류 코드와 HTTP 409를 반환하며 LLM을 다시 호출하지 않습니다. 자동 생성 작업도 같은 잠금을 사용합니다. 실행이 끝난 뒤의 POST는 기존 규칙대로 재생성합니다.",
+        "description": "- 일간·주간·월간·연간 소비 분석 리포트를 생성하거나 재생성하는 API입니다. 출력 포맷은 JSON입니다.\n- 사용자 ID는 첨부된 JWT 페이로드 정보로 확인합니다.\n- 백엔드는 분석 기간의 사용자 거래를 직접 조회하고 앱 입력과 함께 외부 LLM에 소비 분석을 요청합니다.\n\nJWT는 Authorization: Bearer <JWT> 헤더로 전달합니다. query나 본문의 token으로 대체하지 않습니다. period_type과 period_start는 필수이며 아래 앱 입력과 함께 JSON 본문으로만 전달합니다. 앱 입력은 모두 선택이며 생략하거나 null이면 프롬프트에서 제외합니다. age는 10~150의 정수, news는 문자열 배열이며 나머지 앱 입력은 문자열입니다. approach에는 절약 또는 유지 방향을, news에는 최근 일주일간 수집한 기사 제목을 전달합니다. 문자열 값과 기사 제목의 날짜 표기는 자유 형식입니다.\n\n기간은 한국 시간(Asia/Seoul) 기준입니다. daily는 period_start 하루, weekly는 period_start인 월요일부터 일요일, monthly는 period_start인 매월 1일부터 말일, yearly는 period_start인 1월 1일부터 12월 31일까지이며 서버가 period_end를 계산합니다. 현재 또는 과거 기간은 생성·재생성할 수 있습니다. 아직 시작하지 않은 미래 기간의 분석을 요청하면 오류 코드 400을 반환합니다.\n\n사용자·period_type·period_start 조합마다 리포트는 하나만 저장됩니다. 처음 생성하거나 기존 리포트를 재생성할 때 모두 HTTP 200을 반환합니다. 재생성은 기존 id를 유지한 채 full_report와 generated_at을 갱신하고 is_stale을 false로 바꿉니다.\n\n지정한 기간에 거래가 하나도 없으면 외부 LLM을 호출하지 않고 오류 코드 400과 message \"No transactions were found for the requested period.\"를 반환하며 리포트를 저장하거나 변경하지 않습니다. 외부 LLM 호출이 실패하면 오류 코드 502를 반환하고, 호출 시작부터 전체 응답 완료까지 60초를 초과하면 오류 코드 504를 반환합니다. 자동 재시도하지 않으며 실패하면 기존 리포트도 변경하지 않습니다.\n\n자동 생성은 공개 API가 아닌 내부 예약 작업이 같은 생성·갱신 규칙을 사용합니다. 매일 00:00에는 전날의 daily, 매주 월요일 00:00에는 직전 월요일부터 일요일의 weekly, 매월 1일 00:00에는 직전 달의 monthly, 매년 1월 1일 00:00에는 직전 연도의 yearly 리포트를 생성합니다. 모두 Asia/Seoul 기준이며 해당 기간에 거래가 없는 사용자는 건너뜁니다. 예약 생성에는 앱 입력 없이 해당 기간의 거래만 사용합니다.\n\n거래 추가·수정·삭제는 해당 날짜를 포함하는 기존 daily·weekly·monthly·yearly 리포트의 is_stale을 true로 표시할 뿐 외부 LLM을 호출하지 않습니다. 거래 날짜가 바뀌면 변경 전·후 날짜가 속한 기존 리포트를 모두 stale로 표시합니다.\n\n서버는 분석 기간과 앱 입력, 거래 행 [거래일, 수입·지출 유형, 카테고리 코드, 금액]을 공백과 개행을 줄인 한 줄 JSON으로 전달합니다. 거래 ID·사용자 ID·거래 시각·상호·메모·입력 출처는 서버 거래 데이터에서 제외합니다. 정의되지 않은 query 또는 본문 필드(거래 내역 포함)를 전달하면 오류 코드 400을 반환합니다.\n\nfull_report는 JSON 안의 XML 문자열입니다. 클라이언트는 읽을 수 있는 XML 섹션만 UI에 표시하고 누락된 섹션은 건너뜁니다. 표시할 XML 섹션이 없는 리포트는 화면에 표시하지 않습니다. 기존에 저장된 Markdown은 상세 조회 또는 중복 방지 키 재사용 시 반환될 수 있습니다.\n\n<report>의 하위 섹션은 a_word_from_ai, top_spending_categories, spending_health, spending_by_day_of_the_week, tips_for_saving, tips_to_keep_it_up, tips_for_your_interests, news_driven_insights입니다. top_spending_categories에는 지출 건수 기준 최대 3개 category가 들어가며 name, occurrence(지출 건수), tip 속성을 사용합니다. 지출이 없으면 이 섹션은 비어 있고 요약에 지출이 없음을 명시합니다.\n\nIdempotency-Key는 선택이며 1~128자의 영문·숫자·점·밑줄·콜론·하이픈을 허용합니다. 성공 응답은 인증 사용자·작업·키 기준으로 24시간 보관합니다. 같은 키와 같은 요청의 완료 후 재시도에는 최초 성공 상태와 본문을 반환합니다. 같은 키로 기간이나 앱 입력이 다른 요청을 보내면 IDEMPOTENCY_KEY_CONFLICT, 최초 요청이 처리 중이면 IDEMPOTENCY_REQUEST_IN_PROGRESS 오류 코드와 HTTP 409를 반환하며 작업을 중복 실행하지 않습니다. 실패 응답은 보관하지 않으며 24시간이 지나면 같은 키를 새 요청으로 처리할 수 있습니다.\n\n같은 사용자·period_type·period_start의 생성 작업은 한 번에 하나만 실행합니다. Idempotency-Key가 다른 요청이나 키가 없는 요청이 같은 기간의 처리 중 작업과 겹치면 REPORT_GENERATION_IN_PROGRESS 오류 코드와 HTTP 409를 반환하며 LLM을 다시 호출하지 않습니다. 자동 생성 작업도 같은 잠금을 사용합니다. 실행이 끝난 뒤의 POST는 기존 규칙대로 재생성합니다.",
         "responses": {
           "200": {
             "description": "분석 및 리포트 생성 또는 재생성이 완료되었습니다.",
@@ -2177,7 +2177,7 @@
                       "properties": {
                         "full_report": {
                           "type": "string",
-                          "description": "LLM이 반환한 소비 분석 리포트의 전체 내용이며 Markdown 형식의 문자열입니다.",
+                          "description": "LLM이 반환한 소비 분석 리포트의 전체 본문입니다. 새 리포트는 XML 형식이며 기존 리포트는 Markdown일 수 있습니다.",
                           "minLength": 1
                         },
                         "requested_at": {
@@ -2259,7 +2259,7 @@
                   "status": 200,
                   "message": "The request has been accepted and processed.",
                   "data": {
-                    "full_report": "# 월간 소비 분석 리포트\n\n분석 기간: 2026-09-01 ~ 2026-09-30\n\n## 요약\n\n- 총 지출: 40,500원\n- 식비: 40,500원\n\n기간 내 지출은 식비로 분류되었습니다.",
+                    "full_report": "<report>\n  <a_word_from_ai>이번 달 지출은 식비 40,500원이에요.</a_word_from_ai>\n  <top_spending_categories>\n    <category name=\"식비\" occurrence=\"2\" tip=\"다음 달에는 주간 식비 한도를 정해보세요.\"/>\n  </top_spending_categories>\n  <spending_health>기록된 지출은 식비에 집중되어 있어요. 수입 기록이 없어 수입 대비 지출은 판단하기 어려워요.</spending_health>\n  <spending_by_day_of_the_week>식비 지출은 이틀에 걸쳐 발생했어요. 요일별 경향을 판단하려면 기록이 더 필요해요.</spending_by_day_of_the_week>\n  <tips_for_saving>주간 식비 한도를 정하고 결제할 때마다 잔액을 확인해보세요.</tips_for_saving>\n  <tips_to_keep_it_up>식비를 꾸준히 기록해 다음 달과 비교해보세요.</tips_to_keep_it_up>\n  <tips_for_your_interests>외식과 장보기 비용을 따로 기록해 식비 절약 목표에 활용해보세요.</tips_for_your_interests>\n  <news_driven_insights>제공된 기사 제목만으로 식비와 관련된 조언을 제시하기 어려워요.</news_driven_insights>\n</report>",
                     "requested_at": "2026-09-16T14:30:00+09:00",
                     "processing_time_ms": 21381,
                     "period_type": "monthly",
@@ -2659,6 +2659,74 @@
                     "format": "date",
                     "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\\s\\S])",
                     "example": "2026-09-01"
+                  },
+                  "gender": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "성별입니다."
+                  },
+                  "age": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "나이입니다. 문자열이나 불리언은 허용하지 않습니다.",
+                    "minimum": 10,
+                    "maximum": 150
+                  },
+                  "job": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "직업입니다."
+                  },
+                  "company": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "직장 정보입니다."
+                  },
+                  "education": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "학력입니다."
+                  },
+                  "loan": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "대출 여부 및 금액입니다."
+                  },
+                  "approach": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "원하는 소비 관리 방향입니다."
+                  },
+                  "interest": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "현재 관심사 또는 목표입니다."
+                  },
+                  "news": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "description": "앱이 최근 일주일간 수집한 기사 제목 목록입니다.",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 },
                 "required": [
@@ -2669,7 +2737,18 @@
               },
               "example": {
                 "period_type": "monthly",
-                "period_start": "2026-09-01"
+                "period_start": "2026-09-01",
+                "gender": "여성",
+                "age": 35,
+                "job": "공무원",
+                "company": "공공기관",
+                "education": "대학교 졸업",
+                "loan": "주택담보대출 잔여금 1억원",
+                "approach": "절약",
+                "interest": "식비 절약",
+                "news": [
+                  "2026-09-28/지역 대중교통 요금 동결"
+                ]
               }
             }
           }
@@ -2976,7 +3055,7 @@
         ],
         "summary": "분석 상세 조회",
         "operationId": "get_api_v1_report_id",
-        "description": "Authorization: Bearer <JWT>로 인증한 사용자가 본인 소유 소비 분석 리포트 하나를 ID로 조회합니다. full_report를 포함한 전체 리포트를 반환합니다. 대상이 없거나 다른 사용자 소유이면 같은 오류 코드 404를 반환합니다. query와 요청 본문은 허용하지 않습니다.",
+        "description": "Authorization: Bearer <JWT>로 인증한 사용자가 본인 소유 소비 분석 리포트 하나를 ID로 조회합니다. full_report를 포함한 전체 리포트를 반환합니다. 대상이 없거나 다른 사용자 소유이면 같은 오류 코드 404를 반환합니다. query와 요청 본문은 허용하지 않습니다.\n\nfull_report는 JSON 안의 XML 문자열입니다. 클라이언트는 읽을 수 있는 XML 섹션만 UI에 표시하고 누락된 섹션은 건너뜁니다. 표시할 XML 섹션이 없는 리포트는 화면에 표시하지 않습니다. 기존에 저장된 Markdown은 상세 조회 또는 중복 방지 키 재사용 시 반환될 수 있습니다.",
         "parameters": [
           {
             "name": "id",
@@ -3034,7 +3113,7 @@
                         },
                         "full_report": {
                           "type": "string",
-                          "description": "LLM이 반환한 소비 분석 리포트의 전체 내용이며 Markdown 형식의 문자열입니다.",
+                          "description": "LLM이 반환한 소비 분석 리포트의 전체 본문입니다. 새 리포트는 XML 형식이며 기존 리포트는 Markdown일 수 있습니다.",
                           "minLength": 1
                         },
                         "generated_at": {
@@ -3093,7 +3172,7 @@
                   "message": "The request has been accepted and processed.",
                   "data": {
                     "id": 193923,
-                    "full_report": "# 월간 소비 분석 리포트\n\n분석 기간: 2026-09-01 ~ 2026-09-30\n\n## 요약\n\n- 총 지출: 40,500원\n- 식비: 40,500원\n\n기간 내 지출은 식비로 분류되었습니다.",
+                    "full_report": "<report>\n  <a_word_from_ai>이번 달 지출은 식비 40,500원이에요.</a_word_from_ai>\n  <top_spending_categories>\n    <category name=\"식비\" occurrence=\"2\" tip=\"다음 달에는 주간 식비 한도를 정해보세요.\"/>\n  </top_spending_categories>\n  <spending_health>기록된 지출은 식비에 집중되어 있어요. 수입 기록이 없어 수입 대비 지출은 판단하기 어려워요.</spending_health>\n  <spending_by_day_of_the_week>식비 지출은 이틀에 걸쳐 발생했어요. 요일별 경향을 판단하려면 기록이 더 필요해요.</spending_by_day_of_the_week>\n  <tips_for_saving>주간 식비 한도를 정하고 결제할 때마다 잔액을 확인해보세요.</tips_for_saving>\n  <tips_to_keep_it_up>식비를 꾸준히 기록해 다음 달과 비교해보세요.</tips_to_keep_it_up>\n  <tips_for_your_interests>외식과 장보기 비용을 따로 기록해 식비 절약 목표에 활용해보세요.</tips_for_your_interests>\n  <news_driven_insights>제공된 기사 제목만으로 식비와 관련된 조언을 제시하기 어려워요.</news_driven_insights>\n</report>",
                     "generated_at": "2026-10-01T00:00:21+09:00",
                     "period_type": "monthly",
                     "period_start": "2026-09-01",

@@ -116,6 +116,35 @@ def test_report_rejects_invalid_period_boundaries(client):
         assert response.json()["code"] == "INVALID_REQUEST"
 
 
+@pytest.mark.parametrize(
+    "invalid_fields",
+    [
+        {"age": 9},
+        {"age": 151},
+        {"age": "35"},
+        {"age": True},
+        {"news": "기사 제목"},
+        {"news": [123]},
+        {"loan": 10000},
+        {"transactions": []},
+    ],
+)
+def test_report_rejects_invalid_context(client, invalid_fields):
+    """앱 입력의 자료형·나이 범위를 검증하고 거래는 서버에서만 추가합니다."""
+    token = token_for(client)
+    response = client.post(
+        PREFIX,
+        headers=headers(token),
+        json={
+            "period_type": "daily",
+            "period_start": "2026-09-16",
+            **invalid_fields,
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_REQUEST"
+
+
 def test_report_provider_failure_keeps_existing_report(client, monkeypatch):
     """외부 분석 실패는 기존 리포트를 덮어쓰지 않습니다."""
     from smartbudget_server.report.provider import ProviderFailureError
@@ -156,17 +185,34 @@ def test_report_idempotency_replays_and_rejects_conflicting_requests(
 
     monkeypatch.setattr("smartbudget_server.report.router.generate_report", provider)
     request_headers = {**headers(token), "Idempotency-Key": "same-key"}
-    body = {"period_type": "daily", "period_start": "2026-09-16"}
+    context = {
+        "gender": "여성",
+        "age": 35,
+        "job": "공무원",
+        "company": "공공기관",
+        "education": "대학교 졸업",
+        "loan": "대출 없음",
+        "approach": "절약",
+        "interest": "교통비",
+        "news": ["2026-09-15/대중교통 요금 동결"],
+    }
+    body = {"period_type": "daily", "period_start": "2026-09-16", **context}
     first = client.post(PREFIX, headers=request_headers, json=body)
     second = client.post(PREFIX, headers=request_headers, json=body)
     conflicting = client.post(
         PREFIX,
         headers=request_headers,
-        json={"period_type": "monthly", "period_start": "2026-09-01"},
+        json={**body, "interest": "여행비"},
     )
     assert first.status_code == 200
     assert second.json() == first.json()
     assert len(calls) == 1
+    assert calls[0] == {
+        "period_start": "2026-09-16",
+        "period_end": "2026-09-16",
+        **context,
+        "transactions": [("2026-09-16", "expense", "food", 1000)],
+    }
     assert conflicting.status_code == 409
     assert conflicting.json()["code"] == "IDEMPOTENCY_KEY_CONFLICT"
 
