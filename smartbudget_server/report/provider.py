@@ -1,11 +1,11 @@
-"""비식별 집계를 Azure OpenAI에 전송해 소비 분석을 생성합니다."""
+"""소비 분석 템플릿과 압축된 입력을 Azure OpenAI에 전송합니다."""
 
 import asyncio
-import json
 
 import httpx
 
 from smartbudget_server.config import Settings
+from smartbudget_server.report.prompt import REPORT_PROMPT, serialize_report_input
 
 
 class ProviderFailureError(Exception):
@@ -16,8 +16,8 @@ class ProviderTimeoutError(Exception):
     """외부 분석 요청이 전체 시간 제한을 초과했음을 나타냅니다."""
 
 
-async def _request_report(settings: Settings, aggregate: dict) -> str:
-    """서버 인증 정보와 집계만 사용해 단일 LLM 요청을 수행합니다."""
+async def _request_report(settings: Settings, report_input: dict) -> str:
+    """XML 템플릿과 거래·앱 입력을 분리해 단일 LLM 요청을 보냅니다."""
     if not all(
         (
             settings.azure_openai_endpoint,
@@ -30,11 +30,8 @@ async def _request_report(settings: Settings, aggregate: dict) -> str:
     body = {
         "model": settings.azure_openai_deployment,
         "messages": [
-            {
-                "role": "system",
-                "content": "당신은 가계 소비 분석가입니다. 주어진 집계만 사용하여 한국어 Markdown 리포트를 작성하고, 지출이 없으면 명시하세요.",
-            },
-            {"role": "user", "content": json.dumps(aggregate, ensure_ascii=False)},
+            {"role": "system", "content": REPORT_PROMPT},
+            {"role": "user", "content": serialize_report_input(report_input)},
         ],
     }
     try:
@@ -55,12 +52,14 @@ async def _request_report(settings: Settings, aggregate: dict) -> str:
         raise ProviderFailureError() from exc
 
 
-def generate_report(settings: Settings, aggregate: dict) -> str:
+def generate_report(settings: Settings, report_input: dict) -> str:
     """외부 요청의 시작부터 완료까지 60초를 제한하고 재시도하지 않습니다."""
 
     async def limited() -> str:
         """네트워크 요청 전체에 단일 제한 시간을 적용합니다."""
-        return await asyncio.wait_for(_request_report(settings, aggregate), timeout=60)
+        return await asyncio.wait_for(
+            _request_report(settings, report_input), timeout=60
+        )
 
     try:
         return asyncio.run(limited())

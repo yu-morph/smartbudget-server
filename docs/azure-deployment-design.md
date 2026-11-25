@@ -1,6 +1,8 @@
 # Azure 개발 서버 배포 및 CI/CD 운영
 
-상태 확인일: 2026-11-19
+상태 확인일: 2026-11-25
+
+2026-11-25 확인한 원본 저장소 `yu-morph/smartbudget-server`의 `main`과 VM 실행 버전은 모두 `2c9ea210`입니다. 해당 `main` [push 실행](https://github.com/yu-morph/smartbudget-server/actions/runs/44671428424)은 Azure 배포 및 HTTPS 버전 확인까지 성공했습니다. 이후 소비 분석 변경은 `develop`에 반영됐으며 [develop push 실행](https://github.com/yu-morph/smartbudget-server/actions/runs/45552583281)과 [PR 실행](https://github.com/yu-morph/smartbudget-server/actions/runs/45552563329)에서는 배포 작업이 건너뛰어졌습니다.
 
 2026-11-19 재확인: 개발 VM의 버전 API는 `main` 커밋 `b4231f00b35c0896a590fd4a8ff982e2b3e63e50`을 반환했다. 해당 커밋의 [GitHub Actions 실행](https://github.com/yu-morph/smartbudget-server/actions/runs/36536297647)에서 검증 및 Azure VM 배포가 성공했다. OCR·소비 분석 기능은 PR #19로 `develop`에 병합됐지만 이 VM에 반영되지 않았다. 기능과 서버 검증의 현재 상태는 [작업 현황](backend-proxy-todo.md)을 따른다.
 
@@ -52,14 +54,16 @@ PR #13 검증 시점에 저장소 설정 이름은 다음과 같이 등록되어
 ### `main` 배포 흐름
 
 1. 모든 PR과 push에서 기존 `test` 작업이 Python 3.14 환경의 Ruff·pytest 검증을 실행합니다.
-2. `main` push에서만 `Deploy main to Azure VM` 작업이 검증 성공 후 이어집니다. PR 및 다른 브랜치에서는 배포하지 않습니다.
+2. `main` push 또는 `main`을 선택한 수동 실행에서 `Deploy main to Azure VM` 작업이 검증 성공 후 이어집니다. PR, 다른 브랜치, 태그의 실행은 검증만 수행합니다. `develop` 변경을 배포하려면 원본 저장소의 `main`에 병합합니다.
 3. GitHub Actions는 저장소의 `main` ref만 신뢰하는 Entra OIDC로 Azure에 로그인합니다. 장기 Azure 자격 증명이나 앱 비밀값을 저장하지 않습니다.
-4. 배포 직전 이벤트 커밋과 현재 `main` SHA를 비교합니다. 더 오래된 실행이면 건너뜁니다. 같은 배포 그룹의 동시 실행은 직렬화합니다.
+4. 배포 직전 이벤트 커밋과 현재 `main` SHA를 비교합니다. 더 오래된 실행이면 배포 관련 설정 확인, Azure 로그인 및 이후 단계를 건너뜁니다. 같은 배포 그룹의 동시 실행은 직렬화합니다.
 5. Azure VM Run Command가 저장소의 [`scripts/deploy_azure_vm.sh`](../scripts/deploy_azure_vm.sh)를 Bash로 실행합니다. 스크립트는 대상 SHA가 공개 저장소 `yu-morph/smartbudget-server`의 `main` 이력에 포함되는지 확인하고 그 커밋을 체크아웃합니다.
 6. VM에서 [`docker-compose.yml`](../docker-compose.yml)의 `smartbudget-server` 서비스만 로컬 빌드·갱신합니다. `--pull never`로 GHCR 이미지를 가져오지 않고, `--no-deps`로 Watchtower를 실행하지 않으며, 컨테이너 health가 최대 120초 안에 통과하는지 기다립니다.
 7. GitHub Actions가 HTTPS `/api/v1/version`을 호출해 `data.version`이 배포 대상 SHA와 같은지 확인합니다. 이 검증까지 성공해야 배포 작업이 통과합니다.
 
-`.github/workflows/test.yml`이 배포 파이프라인을 정의하고, `scripts/deploy_azure_vm.sh`가 VM 내부 배포 절차를 정의합니다. 별도 `.github/workflows/publish.yml`은 검증 후 GHCR에 이미지를 게시하는 기존 작업입니다. **Azure VM 배포는 이 GHCR 게시 이미지나 Watchtower 자동 감지에 의존하지 않습니다.**
+`.github/workflows/deploy-azure.yml`이 검증과 Azure 배포를 정의하고, `scripts/deploy_azure_vm.sh`가 VM 내부 배포 절차를 정의합니다. 별도 `.github/workflows/deploy-ghcr.yml`은 검증 후 GHCR에 이미지를 게시합니다. Azure VM은 소스에서 직접 빌드합니다.
+
+워크플로 변경이 기본 브랜치 `develop`과 배포 대상 `main`에 반영된 뒤, Actions에서 `Test`의 **Run workflow**를 열고 브랜치 `main`을 선택하면 현재 `main`을 수동 재배포할 수 있습니다.
 
 ## 배포 확인·복구
 
