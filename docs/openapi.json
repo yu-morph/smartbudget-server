@@ -3444,7 +3444,7 @@
         ],
         "summary": "OCR API 프록시",
         "operationId": "post_api_v1_proxy_ocr",
-        "description": "- 입력된 영수증 이미지를 바탕으로 OCR(광학 문자 인식) 작업을 수행, 영수증 내 지출 내역을 디지털 문자열로 가져옵니다. 출력 포맷은 JSON입니다.\n- 이 API는 Azure가 제공하는 OCR API를 대리 호출하는 프록시 API 역할을 수행합니다.\n\nJWT는 Authorization: Bearer <JWT> 헤더로 전달합니다. query나 본문의 token으로 대체하지 않습니다.\n\nfiles 필드로 영수증 파일을 1개 이상 10개 이하 첨부합니다. 각 파일은 JPEG, PNG, HEIC 또는 PDF이며 최대 크기는 10MB입니다. 결과는 입력 파일과 같은 순서로 반환합니다.\n\n파일별로 status(success 또는 failed)와 error_message를 반환합니다. 일부 파일이 실패해도 성공한 파일 결과는 유지하고 전체 응답은 HTTP 200입니다. 실패한 파일은 인식 결과를 null로, items를 빈 배열로 반환합니다.\n\n정의되지 않은 query 또는 본문 필드를 전달하거나 GET·DELETE 요청에 본문을 포함하면 오류 코드 400을 반환합니다. 숫자 필드는 문자열·불리언으로 대체할 수 없습니다.\n\n업로드 검증은 OCR 호출 전에 수행합니다. 누락·빈 파일·개수·형식·용량 오류가 하나라도 있으면 전체 요청을 거부하고 오류 코드 400을 반환합니다. 10MB는 10,000,000바이트이며 파일 내용과 형식을 확인합니다. 검증된 파일은 서로 독립적으로 처리합니다. 파일별 OCR 실패는 failed로 반환하고, 전부 실패해도 결과를 구성할 수 있으면 HTTP 200을 반환합니다. 파일별 결과를 구성할 수 없는 서버 내부 오류가 발생하면 오류 코드 500을 반환합니다. 응답 개수는 입력 파일 개수와 같으며 순서를 유지합니다. 각 파일은 하나의 영수증을 나타내며 여러 영수증이 검출된 파일은 failed로 반환합니다. 여러 페이지 PDF는 하나의 영수증으로 해석합니다. OCR 호출은 파일별 60초 제한이며 자동 재시도하지 않고, 시간 초과·외부 호출 실패·영수증 인식 불가는 해당 파일의 failed 결과입니다. 누락된 개별 필드는 null(items는 [])로 반환할 수 있습니다. 1원 이상의 원화 정수로 해석할 수 없는 총액은 null입니다. OCR은 거래를 자동 저장하지 않습니다. 사용자가 확인 후 POST /api/v1/transaction로 저장하며 type·category를 지정하며 source는 ocr로 설정합니다.\n\nIdempotency-Key는 선택이며 1~128자의 영문·숫자·점·밑줄·콜론·하이픈을 허용합니다. 성공 응답은 인증 사용자·작업·키 기준으로 24시간 보관합니다. 같은 키와 같은 요청의 완료 후 재시도에는 최초 성공 상태와 본문을 반환합니다. 같은 키로 다른 요청을 보내면 IDEMPOTENCY_KEY_CONFLICT, 최초 요청이 처리 중이면 IDEMPOTENCY_REQUEST_IN_PROGRESS 오류 코드와 HTTP 409를 반환하며 작업을 중복 실행하지 않습니다. 실패 응답은 보관하지 않으며 24시간이 지나면 같은 키를 새 요청으로 처리할 수 있습니다.",
+        "description": "- 입력된 영수증 이미지를 바탕으로 OCR(광학 문자 인식) 작업을 수행, 영수증 내 지출 내역을 디지털 문자열로 가져옵니다. 출력 포맷은 JSON입니다.\n- 이 API는 Azure가 제공하는 OCR API를 대리 호출하는 프록시 API 역할을 수행합니다.\n\nJWT는 Authorization: Bearer <JWT> 헤더로 전달합니다. query나 본문의 token으로 대체하지 않습니다.\n\nfiles 필드로 영수증 파일을 1개 이상 10개 이하 첨부합니다. 각 파일은 JPEG, PNG, HEIC 또는 PDF이며 최대 크기는 10MB입니다. 결과는 입력 파일과 같은 순서로 반환합니다.\n\n파일별로 status(success 또는 failed)와 error_message를 반환합니다. 일부 파일이 실패해도 성공한 파일 결과는 유지하고 전체 응답은 HTTP 200입니다. 실패한 파일은 정규화한 인식 필드를 null로, items를 빈 배열로 반환합니다. 성공·실패와 관계없이 파일별 azure_raw_result에는 Azure의 최종 분석 또는 HTTP 오류 본문을 담습니다. 본문이 JSON이면 JSON 값으로 반환하고, JSON이 아니면 문자열로 반환합니다. 최종 본문을 받지 못했으면 null입니다.\n\n정의되지 않은 query 또는 본문 필드를 전달하거나 GET·DELETE 요청에 본문을 포함하면 오류 코드 400을 반환합니다. 숫자 필드는 문자열·불리언으로 대체할 수 없습니다.\n\n업로드 검증은 OCR 호출 전에 수행합니다. 누락·빈 파일·개수·형식·용량 오류가 하나라도 있으면 전체 요청을 거부하고 오류 코드 400을 반환합니다. 10MB는 10,000,000바이트이며 파일 내용과 형식을 확인합니다. 검증된 파일은 서로 독립적으로 처리합니다. 파일별 OCR 실패는 failed로 반환하고, 전부 실패해도 결과를 구성할 수 있으면 HTTP 200을 반환합니다. 파일별 결과를 구성할 수 없는 서버 내부 오류가 발생하면 오류 코드 500을 반환합니다. 응답 개수는 입력 파일 개수와 같으며 순서를 유지합니다. 각 파일은 하나의 영수증을 나타내며 여러 영수증이 검출된 파일은 failed로 반환합니다. 여러 페이지 PDF는 하나의 영수증으로 해석합니다. OCR 호출은 파일별 60초 제한이며 자동 재시도하지 않고, 시간 초과·외부 호출 실패·영수증 인식 불가는 해당 파일의 failed 결과입니다. 누락된 개별 필드는 null(items는 [])로 반환할 수 있습니다. 1원 이상의 원화 정수로 해석할 수 없는 총액은 null입니다. OCR은 거래를 자동 저장하지 않습니다. 사용자가 확인 후 POST /api/v1/transaction로 저장하며 type·category를 지정하며 source는 ocr로 설정합니다.\n\nIdempotency-Key는 선택이며 1~128자의 영문·숫자·점·밑줄·콜론·하이픈을 허용합니다. 성공 응답은 인증 사용자·작업·키 기준으로 24시간 보관합니다. 같은 키와 같은 요청의 완료 후 재시도에는 azure_raw_result를 포함한 기존 응답을 반환합니다. 변경 전에 저장된 응답의 azure_raw_result는 null입니다. 같은 키로 다른 요청을 보내면 IDEMPOTENCY_KEY_CONFLICT, 최초 요청이 처리 중이면 IDEMPOTENCY_REQUEST_IN_PROGRESS 오류 코드와 HTTP 409를 반환하며 작업을 중복 실행하지 않습니다. 실패 응답은 보관하지 않으며 24시간이 지나면 같은 키를 새 요청으로 처리할 수 있습니다.",
         "responses": {
           "200": {
             "description": "정상 처리됨.",
@@ -3543,6 +3543,17 @@
                             "minimum": 1,
                             "description": "인식한 거래 총액입니다. 원화(KRW) 기준 1원 이상의 정수이며 인식할 수 없으면 null입니다.",
                             "example": 40500
+                          },
+                          "azure_raw_result": {
+                            "type": [
+                              "object",
+                              "array",
+                              "string",
+                              "number",
+                              "boolean",
+                              "null"
+                            ],
+                            "description": "해당 파일의 Azure 최종 분석 또는 HTTP 오류 원본 본문입니다. JSON이 아니면 텍스트이며 본문을 받지 못했으면 null입니다."
                           }
                         },
                         "required": [
@@ -3554,7 +3565,8 @@
                           "date",
                           "time",
                           "amount",
-                          "file_index"
+                          "file_index",
+                          "azure_raw_result"
                         ],
                         "additionalProperties": false,
                         "allOf": [
@@ -3641,18 +3653,47 @@
                       "store_name": "대박수산",
                       "date": "2026-09-12",
                       "time": "16:50:11",
-                      "amount": 40500
+                      "amount": 40500,
+                      "azure_raw_result": {
+                        "status": "succeeded",
+                        "analyzeResult": {
+                          "modelId": "prebuilt-receipt",
+                          "content": "대박수산\n2026-09-12 16:50:11\n상차림비\n광어회\n매운탕추가\n40,500원",
+                          "documents": [
+                            {
+                              "fields": {
+                                "MerchantName": {
+                                  "valueString": "대박수산"
+                                },
+                                "Total": {
+                                  "valueCurrency": {
+                                    "amount": 40500,
+                                    "currencyCode": "KRW"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
                     },
                     {
                       "file_name": "receipt-2.pdf",
                       "status": "failed",
-                      "error_message": "영수증 내용을 인식할 수 없습니다.",
+                      "error_message": "Receipt recognition failed.",
                       "items": [],
                       "file_index": 1,
                       "store_name": null,
                       "date": null,
                       "time": null,
-                      "amount": null
+                      "amount": null,
+                      "azure_raw_result": {
+                        "status": "failed",
+                        "error": {
+                          "code": "InvalidContent",
+                          "message": "The file could not be analyzed."
+                        }
+                      }
                     }
                   ],
                   "code": "SUCCESS"

@@ -79,23 +79,28 @@ def test_ocr_results_keep_input_order(client, monkeypatch):
 
 
 def test_partial_ocr_failure_preserves_success(client, monkeypatch):
-    """일부 OCR 호출이 실패해도 성공 결과와 원본 순서를 유지합니다."""
+    """부분 실패에도 순서대로 성공과 실패의 Azure 원문을 반환합니다."""
     from smartbudget_server.proxy.provider import OcrProviderError
 
     second = BytesIO()
     Image.new("RGB", (50, 50), "black").save(second, format="PNG")
     failed_bytes = second.getvalue()
+    failed_raw = {"status": "failed", "error": {"code": "InvalidContent"}}
 
     async def recognize(settings, data, content_type):
         """검은 이미지만 외부 처리 실패를 재현합니다."""
         if data == failed_bytes:
-            raise OcrProviderError()
+            raise OcrProviderError(failed_raw)
         return {
             "store_name": "가게",
             "items": ["상품"],
             "date": None,
             "time": None,
             "amount": 1000,
+            "azure_raw_result": {
+                "status": "succeeded",
+                "analyzeResult": {"content": "상품"},
+            },
         }
 
     monkeypatch.setattr("smartbudget_server.proxy.router.recognize_receipt", recognize)
@@ -121,11 +126,14 @@ def test_partial_ocr_failure_preserves_success(client, monkeypatch):
         second["items"],
     ) == (1, "failed", None, [])
     assert second["error_message"]
+    assert first["azure_raw_result"]["analyzeResult"]["content"] == "상품"
+    assert second["azure_raw_result"] == failed_raw
 
 
 def test_ocr_idempotency_replays_and_detects_conflicts(client, monkeypatch):
     """동일 키 재시도는 결과를 재사용하고 내용이 달라지면 거부합니다."""
     calls = []
+    raw_result = {"status": "succeeded", "analyzeResult": {"content": "가상 영수증"}}
 
     async def recognize(settings, data, content_type):
         """제공자 호출 횟수를 기록합니다."""
@@ -136,6 +144,7 @@ def test_ocr_idempotency_replays_and_detects_conflicts(client, monkeypatch):
             "date": None,
             "time": None,
             "amount": None,
+            "azure_raw_result": raw_result,
         }
 
     monkeypatch.setattr("smartbudget_server.proxy.router.recognize_receipt", recognize)
@@ -157,6 +166,7 @@ def test_ocr_idempotency_replays_and_detects_conflicts(client, monkeypatch):
     )
     assert first.status_code == second.status_code == 200
     assert first.json() == second.json()
+    assert second.json()["data"][0]["azure_raw_result"] == raw_result
     assert len(calls) == 1
     assert conflict.status_code == 409
     assert conflict.json()["code"] == "IDEMPOTENCY_KEY_CONFLICT"

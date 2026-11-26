@@ -73,6 +73,69 @@ def test_ocr_polls_same_host_and_rejects_untrusted_operation_url(monkeypatch):
     assert seen == ["ocr.example"]
 
 
+@pytest.mark.parametrize(
+    ("status_code", "body", "expected_amount"),
+    [
+        (
+            200,
+            {
+                "status": "succeeded",
+                "analyzeResult": {
+                    "content": "영수증 1000원",
+                    "documents": [
+                        {
+                            "fields": {
+                                "Total": {"valueNumber": 1000, "content": "1000원"}
+                            }
+                        }
+                    ],
+                },
+            },
+            1000,
+        ),
+        (200, {"status": "succeeded", "analyzeResult": {"documents": []}}, None),
+        (200, {"status": "failed", "error": {"code": "InvalidContent"}}, None),
+        (429, {"error": {"code": "TooManyRequests"}}, None),
+        (503, "Service unavailable", None),
+    ],
+)
+def test_ocr_preserves_azure_result_even_when_processing_fails(
+    monkeypatch, status_code, body, expected_amount
+):
+    """정규화 성공·실패와 Azure HTTP 오류에서 같은 원본 본문을 보존합니다."""
+
+    def respond(request):
+        """파일 제출과 Azure의 최종 결과 응답을 모의합니다."""
+        if request.method == "POST":
+            return httpx.Response(
+                202, headers={"operation-location": "https://ocr.example/result"}
+            )
+        if isinstance(body, str):
+            return httpx.Response(status_code, text=body)
+        return httpx.Response(status_code, json=body)
+
+    original = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original(transport=httpx.MockTransport(respond), **kwargs),
+    )
+    settings = Settings(
+        _env_file=None,
+        jwt_secret="x" * 43,
+        azure_document_intelligence_endpoint="https://ocr.example",
+        azure_document_intelligence_key="secret",
+    )
+    if expected_amount is None:
+        with pytest.raises(OcrProviderError) as failure:
+            asyncio.run(recognize_receipt(settings, b"data", "image/png"))
+        assert failure.value.azure_raw_result == body
+    else:
+        result = asyncio.run(recognize_receipt(settings, b"data", "image/png"))
+        assert result["amount"] == expected_amount
+        assert result["azure_raw_result"] == body
+
+
 def test_multiple_pages_can_form_one_receipt_but_multiple_receipts_fail():
     """여러 페이지의 단일 영수증은 합치고 별도 영수증이 감지되면 거부합니다."""
     first = {"fields": {"MerchantName": {"valueString": "가게"}}}

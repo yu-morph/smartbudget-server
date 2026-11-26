@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from smartbudget_server.http import SUCCESS_MESSAGE, Envelope, response_code_schema
 
@@ -31,6 +31,9 @@ class OcrResult(BaseModel):
     ]
     amount: Annotated[int | None, Field(ge=1)]
     file_index: Annotated[int, Field(ge=0, le=9)]
+    azure_raw_result: JsonValue = Field(
+        description="Azure의 최종 분석 또는 HTTP 오류 본문입니다. JSON이 아니면 원문 텍스트입니다.",
+    )
 
     @model_validator(mode="after")
     def validate_status_fields(self):

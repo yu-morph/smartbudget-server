@@ -6,12 +6,26 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
 
 import httpx
+from pydantic import JsonValue
 
 from smartbudget_server.config import Settings
 
 
 class OcrProviderError(Exception):
-    """제공자가 파일을 분석하지 못했음을 나타냅니다."""
+    """파일별 OCR 실패와 확인 가능한 Azure 응답을 라우터에 전달합니다."""
+
+    def __init__(self, azure_raw_result: JsonValue = None) -> None:
+        """Azure 본문을 공개용 실패 메시지와 별도로 보관합니다."""
+        super().__init__()
+        self.azure_raw_result = azure_raw_result
+
+
+def _response_body(response: httpx.Response) -> JsonValue:
+    """Azure 응답을 JSON 값으로 읽고 JSON이 아니면 원문 텍스트를 보존합니다."""
+    try:
+        return response.json()
+    except ValueError:
+        return response.text or None
 
 
 def _value(fields: dict, name: str, kind: str):
@@ -158,14 +172,26 @@ async def _analyze(settings: Settings, data: bytes, content_type: str) -> dict:
             await asyncio.sleep(1)
             result = await client.get(operation, headers=headers)
             result.raise_for_status()
-            body = result.json()
+            body = _response_body(result)
+            if not isinstance(body, dict):
+                raise OcrProviderError(body)
             if body.get("status") == "succeeded":
-                analysis = body.get("analyzeResult", {})
-                return _combine_documents(
-                    analysis.get("documents", []), analysis.get("pages", [])
-                )
+                try:
+                    analysis = body.get("analyzeResult", {})
+                    fields = _combine_documents(
+                        analysis.get("documents", []), analysis.get("pages", [])
+                    )
+                except (
+                    OcrProviderError,
+                    AttributeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                ) as exc:
+                    raise OcrProviderError(body) from exc
+                return {**fields, "azure_raw_result": body}
             if body.get("status") not in ("running", "notStarted"):
-                raise OcrProviderError()
+                raise OcrProviderError(body)
 
 
 async def recognize_receipt(settings: Settings, data: bytes, content_type: str) -> dict:
@@ -174,5 +200,7 @@ async def recognize_receipt(settings: Settings, data: bytes, content_type: str) 
         return await asyncio.wait_for(
             _analyze(settings, data, content_type), timeout=60
         )
+    except httpx.HTTPStatusError as exc:
+        raise OcrProviderError(_response_body(exc.response)) from exc
     except (TimeoutError, httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
         raise OcrProviderError() from exc

@@ -196,6 +196,8 @@ async def _dispatch_ocr(
             request.app.state.engine, user_id, idempotency_key, fingerprint
         )
         if state == "replay":
+            for item in cached:
+                item.setdefault("azure_raw_result", None)
             return respond(200, cached)
         if state != "started":
             message = (
@@ -210,30 +212,37 @@ async def _dispatch_ocr(
     async def process(index: int, name: str, temporary, content_type: str):
         """한 파일의 실패를 다른 파일과 격리하고 결과 스키마를 검증합니다."""
         async with semaphore:
+            azure_raw_result = None
             try:
                 data = await asyncio.to_thread(temporary.read)
                 values = await recognize_receipt(
                     request.app.state.settings, data, content_type
                 )
+                azure_raw_result = values.pop("azure_raw_result", None)
                 return OcrResult(
                     file_name=name,
                     file_index=index,
                     status="success",
                     error_message=None,
+                    azure_raw_result=azure_raw_result,
                     **values,
                 ).model_dump(mode="json")
-            except OcrProviderError, ValueError:
-                return OcrResult(
-                    file_name=name,
-                    file_index=index,
-                    status="failed",
-                    error_message="Receipt recognition failed.",
-                    store_name=None,
-                    items=[],
-                    date=None,
-                    time=None,
-                    amount=None,
-                ).model_dump(mode="json")
+            except OcrProviderError as exc:
+                azure_raw_result = exc.azure_raw_result
+            except ValueError:
+                pass
+            return OcrResult(
+                file_name=name,
+                file_index=index,
+                status="failed",
+                error_message="Receipt recognition failed.",
+                store_name=None,
+                items=[],
+                date=None,
+                time=None,
+                amount=None,
+                azure_raw_result=azure_raw_result,
+            ).model_dump(mode="json")
 
     try:
         result = await asyncio.gather(
