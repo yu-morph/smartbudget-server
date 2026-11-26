@@ -27,6 +27,14 @@ REPORT_PROMPT = """일반 사용자가 모바일 가계부 앱에서 읽을 한�
   <news_driven_insights>기사 제목에서 드러난 시사·시장 흐름을 바탕으로 한 소비 조언</news_driven_insights>
 </report>
 
+XML 섹션의 텍스트 안에서 [!color red]텍스트 내용입니다[/] 형식으로 색상을 지정하세요.
+색상은 red, blue, green만 사용할 수 있습니다.
+a_word_from_ai와 top_spending_categories에는 색상 태그를 사용하지 마세요. category의 속성값도 포함됩니다.
+그 외 섹션에 수입 금액을 적을 때는 [!color red]100,000원[/], 지출 금액을 적을 때는
+[!color blue]20,000원[/]처럼 금액과 통화 단위를 반드시 감싸세요.
+중요한 표현은 선택적으로 [!color green]주간 식비 한도[/]처럼 강조하세요.
+green을 사용하는 섹션에서는 1~2곳만 선택하고, 핵심 단어나 짧은 구절만 감싸세요.
+
 입력의 transactions는 [거래일, expense 또는 income, 카테고리 코드, 원화 금액] 행의 배열입니다.
 수입과 지출을 구분하고, category는 지출 건수 내림차순으로 최대 3개 작성하세요.
 occurrence는 해당 카테고리의 지출 건수를 10진 정수로 넣으세요.
